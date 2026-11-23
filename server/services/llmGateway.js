@@ -58,14 +58,35 @@ async function fetchModelCatalog({ provider = 'gemini', accessToken }) {
     };
   }
 
-  // Default: Direct Google Gemini (AI Studio BYOK)
+  // Default: Direct Google Gemini — dynamically query live models available on this key
+  const resp = await fetch("https://generativelanguage.googleapis.com/v1beta/models", {
+    headers: { "x-goog-api-key": accessToken },
+  });
+  if (resp.ok) {
+    const data = await resp.json();
+    const models = (data.models || [])
+      .filter((m) => (m.supportedGenerationMethods || []).includes("generateContent"))
+      .filter((m) => /gemini/i.test(m.name) && !/embedding|aqa|tts|imagen|veo/i.test(m.name))
+      .map((m) => {
+        const id = m.name.replace(/^models\//, "");
+        return {
+          id,
+          name: m.displayName || id,
+          tier: "byok",
+          contextLength: m.inputTokenLimit || 1000000,
+          thinkingLevels: ["Low", "Mid", "Max"],
+        };
+      })
+      .sort((a, b) => b.id.localeCompare(a.id));
+    if (models.length > 0) {
+      return { provider: "gemini", connected: true, models };
+    }
+  }
   return {
-    provider: 'gemini',
+    provider: "gemini",
     connected: true,
     models: [
-      { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', tier: 'free/byok', contextLength: 1000000, thinkingLevels: ['Low', 'Mid', 'Max'] },
-      { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', tier: 'byok', contextLength: 1000000, thinkingLevels: ['Low', 'Mid', 'Max'] },
-      { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', tier: 'free/byok', contextLength: 1000000, thinkingLevels: ['Low', 'Mid'] },
+      { id: "gemini-3.8-flash", name: "Gemini 3.8 Flash", tier: "byok", contextLength: 1000000, thinkingLevels: ["Low", "Mid", "Max"] },
     ],
   };
 }

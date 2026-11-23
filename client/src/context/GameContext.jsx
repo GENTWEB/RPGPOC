@@ -39,7 +39,7 @@ export function GameProvider({ children }) {
       ]);
       setProviderStatus(catalog);
       if (catalog.models?.length > 0) {
-        setSelectedModel((prev) => prev || catalog.models[0].id);
+        setSelectedModel((prev) => (catalog.models.some((m) => m.id === prev) ? prev : catalog.models[0].id));
       }
       setCampaigns(campList.campaigns || []);
     } catch (err) {
