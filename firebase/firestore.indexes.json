@@ -1,0 +1,29 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "snapshots",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "turnNumber", "order": "DESCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "archivist_historical_memory",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "campaignId", "order": "ASCENDING" },
+        { "fieldPath": "archivedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "archivist_npc_genetics",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "permanenceUnlocked", "order": "ASCENDING" },
+        { "fieldPath": "relationalXP", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}
