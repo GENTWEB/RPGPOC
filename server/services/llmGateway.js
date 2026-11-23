@@ -66,7 +66,7 @@ async function fetchModelCatalog({ provider = 'gemini', accessToken }) {
     const data = await resp.json();
     const models = (data.models || [])
       .filter((m) => (m.supportedGenerationMethods || []).includes("generateContent"))
-      .filter((m) => /gemini/i.test(m.name) && !/embedding|aqa|tts|imagen|veo|image|banana/i.test(m.name))
+      .filter((m) => /gemini|gemma/i.test(m.name) && !/embedding|aqa|tts|imagen|veo|image|banana/i.test(m.name))
       .map((m) => {
         const id = m.name.replace(/^models\//, "");
         return {
@@ -153,7 +153,8 @@ async function callNarratorLLM({
   // Default: Direct Google Gemini API (x-goog-api-key header)
   const geminiModel = model.replace(/^google\//, '');
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(geminiModel)}:generateContent`;
-  const parts = [{ text: userPrompt }];
+  const isGemma3 = /^gemma-3/i.test(geminiModel);
+  const parts = [{ text: isGemma3 ? `${systemPrompt}\n\n${userPrompt}` : userPrompt }];
   if (imageBase64) {
     const match = imageBase64.match(/^data:([^;]+);base64,(.+)$/);
     if (match) parts.push({ inline_data: { mime_type: match[1], data: match[2] } });
@@ -165,7 +166,7 @@ async function callNarratorLLM({
       'x-goog-api-key': accessToken,
     },
     body: JSON.stringify({
-      system_instruction: { parts: [{ text: systemPrompt }] },
+      ...(isGemma3 ? {} : { system_instruction: { parts: [{ text: systemPrompt }] } }),
       contents: [{ role: 'user', parts }],
       generationConfig: { maxOutputTokens: budget.max_tokens },
     }),
