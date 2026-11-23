@@ -150,7 +150,10 @@ export function GameProvider({ children }) {
     if (!campaignState || !userInput.trim()) return;
     setBusy(true);
     try {
-      const res = await apiClient.sendTurn(campaignState.id, {
+      const isSetupMode = campaignState.narratorState?.currentProcess === 'setup';
+      const res = isSetupMode
+        ? await apiClient.setupChat(campaignState.id, { message: userInput, model: selectedModel, thinkingLevel })
+        : await apiClient.sendTurn(campaignState.id, {
         userInput,
         tacticalAction,
         model: selectedModel,

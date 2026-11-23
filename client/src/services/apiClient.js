@@ -48,6 +48,10 @@ export const apiClient = {
   getCampaign: (campaignId) => request(`/campaigns/${campaignId}`),
   getArchetypes: () => request('/campaigns/archetypes'),
   getSjtScenarios: () => request('/campaigns/sjt-scenarios'),
+  setupChat: (campaignId, payload) =>
+    request(`/campaigns/${campaignId}/setup/chat`, { method: 'POST', body: JSON.stringify(payload) }),
+  generateThemedSjt: (campaignId, payload) =>
+    request(`/campaigns/${campaignId}/setup/sjt/generate`, { method: 'POST', body: JSON.stringify(payload) }),
   advanceSetup: (campaignId, step, payload) =>
     request(`/campaigns/${campaignId}/setup/${step}`, { method: 'POST', body: JSON.stringify(payload) }),
 
