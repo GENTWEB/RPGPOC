@@ -58,37 +58,44 @@ class MediaPipeline {
   }
 
   async _renderImageBuffer({ prompt, referencePaths = [], accessToken = null }) {
-    if (typeof this.imageGenerator === 'function') {
+    if (typeof this.imageGenerator === "function") {
       return this.imageGenerator({ prompt, referencePaths });
     }
 
-    if (accessToken && process.env.IMAGE_GEN_API_URL) {
-      try {
-        const resp = await fetch(process.env.IMAGE_GEN_API_URL, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${accessToken}`,
-          },
-          body: JSON.stringify({
-            model: process.env.IMAGE_GEN_MODEL || 'google/gemini-2.5-flash-image-preview',
-            messages: [{ role: 'user', content: prompt }],
-          }),
-        });
-        if (resp.ok) {
-          const data = await resp.json();
-          const b64 = data?.data?.[0]?.b64_json;
-          if (b64) return Buffer.from(b64, 'base64');
-        }
-      } catch (_) {
-        // Fallback to clean 1x1 PNG placeholder buffer if remote image API is unreachable
+    if (accessToken) {
+      const imageModel = process.env.IMAGE_GEN_MODEL || "gemini-3.1-flash-image";
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(imageModel)}:generateContent`;
+      const resp = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": accessToken,
+        },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          generationConfig: { responseModalities: ["IMAGE", "TEXT"] },
+        }),
+      });
+      if (!resp.ok) {
+        const errText = await resp.text();
+        throw new Error(`Nano Banana 2 (${imageModel}) image error (${resp.status}): ${errText.slice(0, 220)}`);
       }
+      const data = await resp.json();
+      const parts = data.candidates?.[0]?.content?.parts || [];
+      const imgPart = parts.find((p) => p.inlineData?.data || p.inline_data?.data);
+      const b64 = imgPart?.inlineData?.data || imgPart?.inline_data?.data;
+      if (b64) return Buffer.from(b64, "base64");
+      throw new Error("Nano Banana 2 responded without an image payload.");
     }
 
-    // Minimal valid 1x1 dark PNG buffer for offline/deterministic simulation
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("No Gemini API key connected for Nano Banana 2 image generation. Connect your key or upload a reference photo.");
+    }
+
+    // Minimal 1x1 PNG buffer strictly for offline automated tests
     return Buffer.from(
-      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
-      'base64'
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+      "base64"
     );
   }
 

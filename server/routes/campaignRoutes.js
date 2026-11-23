@@ -31,7 +31,7 @@ async function getUserLlmCreds(uid, reqBody = {}) {
   const provider = vault.byokProvider || 'gemini';
   const defaultModel =
     provider === 'gemini'
-      ? 'gemini-2.5-flash'
+      ? 'gemini-3.8-flash'
       : provider === 'openai'
       ? 'gpt-4o-mini'
       : 'claude-sonnet-4-20250514';

@@ -64,6 +64,7 @@ async function runSimulation() {
     narratorStyle: 'William Gibson meets Raymond Chandler',
     axxRating: 4,
     scaryRating: 3,
+      scary3Confirmed: true,
     rulesetMode: RULESET_MODES.CLASSIC_D20,
   });
   assert.strictEqual(axxBlock.ok, false, 'AXX 4 requires explicit confirmation');

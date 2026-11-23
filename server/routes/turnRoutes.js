@@ -45,7 +45,7 @@ router.post('/:campaignId', async (req, res) => {
     const {
       userInput = '',
       tacticalAction = null,
-      model = 'gemini-2.5-flash',
+      model = 'gemini-3.8-flash',
       thinkingLevel = 'Mid',
     } = req.body || {};
 

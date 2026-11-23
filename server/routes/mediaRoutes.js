@@ -26,7 +26,7 @@ router.post('/:campaignId/portrait', mediaLimiter, async (req, res) => {
 
     const vaultDoc = await getDb().collection('users').doc(uid).collection('profile').doc('oauth_vault').get();
     const vault = vaultDoc.exists ? vaultDoc.data() : {};
-    const accessToken = decryptToken(req.cookies?.dl_or_token || vault.openrouterTokenEnc);
+    const accessToken = decryptToken(vault.byokKeyEnc);
 
     const portrait = await mediaPipeline.generateCharacterPortrait({
       uid,

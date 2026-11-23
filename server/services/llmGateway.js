@@ -66,7 +66,7 @@ async function fetchModelCatalog({ provider = 'gemini', accessToken }) {
     const data = await resp.json();
     const models = (data.models || [])
       .filter((m) => (m.supportedGenerationMethods || []).includes("generateContent"))
-      .filter((m) => /gemini/i.test(m.name) && !/embedding|aqa|tts|imagen|veo/i.test(m.name))
+      .filter((m) => /gemini/i.test(m.name) && !/embedding|aqa|tts|imagen|veo|image|banana/i.test(m.name))
       .map((m) => {
         const id = m.name.replace(/^models\//, "");
         return {
@@ -77,7 +77,10 @@ async function fetchModelCatalog({ provider = 'gemini', accessToken }) {
           thinkingLevels: ["Low", "Mid", "Max"],
         };
       })
-      .sort((a, b) => b.id.localeCompare(a.id));
+      .sort((a, b) => {
+        const score = (id) => (id === "gemini-3.8-flash" ? 3 : /3\.8.*flash/i.test(id) ? 2 : /flash/i.test(id) ? 1 : 0);
+        return score(b.id) - score(a.id) || b.id.localeCompare(a.id);
+      });
     if (models.length > 0) {
       return { provider: "gemini", connected: true, models };
     }
@@ -94,7 +97,7 @@ async function fetchModelCatalog({ provider = 'gemini', accessToken }) {
 async function callNarratorLLM({
   provider = 'gemini',
   accessToken,
-  model = 'gemini-2.5-flash',
+  model = 'gemini-3.8-flash',
   thinkingLevel = 'Mid',
   systemPrompt,
   userPrompt,

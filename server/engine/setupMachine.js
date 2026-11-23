@@ -286,6 +286,9 @@ function advanceSetupStep(campaignState, targetStep, payload = {}, timestamp = n
         };
       }
       if (scary < 0 || scary > 3) return { ok: false, error: 'Global SCARY Rating must be 0-3.' };
+      if (scary === 3 && !payload.scary3Confirmed) {
+        return { ok: false, error: 'Explicit intense horror/dread confirmation (scary3Confirmed: true) is required for SCARY Rating 3.' };
+      }
 
       const mode = payload.rulesetMode === RULESET_MODES.PSYCH_REALISM
         ? RULESET_MODES.PSYCH_REALISM
@@ -295,7 +298,7 @@ function advanceSetupStep(campaignState, targetStep, payload = {}, timestamp = n
       campaignState.globalState.narratorStyle = String(payload.narratorStyle || '').trim() || 'Cinematic Noir';
       campaignState.globalState.axxRating = axx;
       campaignState.globalState.scaryRating = scary;
-      campaignState.globalState.dateTime = String(payload.dateTime || '2050-09-20 04:00');
+      campaignState.globalState.dateTime = String(payload.dateTime || 'Let Gemini decide');
       campaignState.globalState.playerCount = Math.max(1, Number(payload.playerCount) || 1);
       campaignState.metaData.rulesetMode = mode;
       campaignState.sceneMemory.currentScene.timeAndDate = campaignState.globalState.dateTime;
