@@ -43,9 +43,7 @@ export default function ChatPane() {
   const [sjtScenarios, setSjtScenarios] = useState([]);
   const [sjtAnswers, setSjtAnswers] = useState([]);
   const [sjtLoading, setSjtLoading] = useState(false);
-  const [sjtScenarios, setSjtScenarios] = useState([]);
-  const [sjtAnswers, setSjtAnswers] = useState([]);
-  const [sjtLoading, setSjtLoading] = useState(false);
+  const [brainstorming, setBrainstorming] = useState(false);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -76,11 +74,52 @@ export default function ChatPane() {
 
   const runSetupStep = async (step, payload) => {
     try {
-      const res = await apiClient.advanceSetup(campaignState.id, step, payload);
+      const res = await apiClient.advanceSetup(campaignState.id, step, {
+        ...payload,
+        model: selectedModel,
+        thinkingLevel,
+      });
       setCampaignState(res.campaignState);
       notify(`Completed setup stage: ${step}`, 'success');
     } catch (err) {
       notify(err.message, 'error');
+    }
+  };
+
+  const handleBrainstormSetting = async () => {
+    if (!setupForm.settingDescription.trim()) return;
+    setBrainstorming(true);
+    try {
+      const res = await apiClient.setupChat(campaignState.id, {
+        message: setupForm.settingDescription,
+        model: selectedModel,
+        thinkingLevel,
+      });
+      setCampaignState(res.campaignState);
+    } catch (err) {
+      notify(err.message, 'error');
+    } finally {
+      setBrainstorming(false);
+    }
+  };
+
+  const handleGenerateSjt = async () => {
+    setSjtLoading(true);
+    try {
+      const res = await apiClient.generateThemedSjt(campaignState.id, {
+        stage: sjtScenarios.length === 0 ? 'foundation' : 'adaptive',
+        count: 5,
+        previousAnswers: sjtAnswers,
+        model: selectedModel,
+        thinkingLevel,
+      });
+      setSjtScenarios(res.scenarios || []);
+      setSjtAnswers([]);
+      notify('Generated world-themed SJT scenarios with Gemini.', 'success');
+    } catch (err) {
+      notify(err.message, 'error');
+    } finally {
+      setSjtLoading(false);
     }
   };
 
@@ -151,12 +190,11 @@ export default function ChatPane() {
   return (
     <div className="flex-1 flex flex-col min-h-0">
       <div className="flex-1 overflow-y-auto p-5 space-y-4">
-        {/* Sequential Setup Wizard Inline Cards */}
         {isSetup && step === 'ignition' && (
           <div className="rounded-xl bg-[#161d26] border border-slate-700 p-5 space-y-3">
             <div className="text-xs font-mono text-amber-400 uppercase">Step 1 // Chrono-Seed Ignition</div>
             <p className="text-sm text-slate-300">
-              Lock your campaign Chrono-Seed from the server timestamp and begin world synthesis.
+              Lock your campaign Chrono-Seed from the server timestamp and begin procedural worldbuilding with Gemini.
             </p>
             <button
               onClick={() => runSetupStep('ignition', {})}
@@ -169,39 +207,31 @@ export default function ChatPane() {
 
         {isSetup && step === 'setting' && (
           <div className="rounded-xl bg-[#161d26] border border-slate-700 p-5 space-y-3">
-            <div className="text-xs font-mono text-amber-400 uppercase">Step 2 // Setting Input (Text or Moodboard)</div>
+            <div className="text-xs font-mono text-amber-400 uppercase">Step 2 // Procedural Setting Co-Creation</div>
+            <p className="text-xs text-slate-400">
+              Pitch your genre mashup below and click Brainstorm to build the world with Gemini (you can also chat back and forth using the bar at the bottom before locking it in).
+            </p>
             <textarea
               rows={3}
               value={setupForm.settingDescription}
               onChange={(e) => setSetupForm({ ...setupForm, settingDescription: e.target.value })}
-              placeholder="Describe your world, genre mood, and stakes (or upload a moodboard image below)..."
+              placeholder="e.g., Harry Potter meets Project Hail Mary..."
               className="w-full rounded-lg bg-[#0f1419] border border-slate-700 p-3 text-sm text-slate-100"
             />
             <div className="flex flex-wrap gap-2">
               <button
-                onClick={async () => {
-                  try {
-                    const res = await apiClient.setupChat(campaignState.id, {
-                      message: setupForm.settingDescription,
-                      model: selectedModel,
-                      thinkingLevel,
-                    });
-                    setCampaignState(res.campaignState);
-                  } catch (err) {
-                    notify(err.message, "error");
-                  }
-                }}
-                disabled={!setupForm.settingDescription.trim() || busy}
+                onClick={handleBrainstormSetting}
+                disabled={!setupForm.settingDescription.trim() || brainstorming || busy}
                 className="px-4 py-2 rounded-lg bg-teal-500/20 border border-teal-400/60 text-teal-200 font-semibold text-xs disabled:opacity-40"
               >
-                Brainstorm Pitch with Gemini
+                {brainstorming ? 'Thinking with Gemini...' : 'Brainstorm Pitch with Gemini'}
               </button>
               <button
                 onClick={() => runSetupStep('setting', { settingDescription: setupForm.settingDescription })}
                 disabled={!setupForm.settingDescription.trim() || busy}
                 className="px-4 py-2 rounded-lg bg-amber-500 text-[#0f1419] font-semibold text-xs disabled:opacity-40"
               >
-                Lock Setting & Continue
+                Lock Setting &amp; Continue
               </button>
             </div>
           </div>
@@ -325,6 +355,55 @@ export default function ChatPane() {
               </select>
             )}
 
+            {setupForm.creationMethod === 'SJT' && (
+              <div className="p-3.5 rounded-xl bg-[#0f1419] border border-teal-500/40 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-mono text-teal-300">
+                    PROCEDURAL WORLD-THEMED SJT ({sjtAnswers.length}/{sjtScenarios.length || 5} answered)
+                  </span>
+                  <button
+                    disabled={sjtLoading}
+                    onClick={handleGenerateSjt}
+                    className="px-3 py-1 rounded bg-teal-500 text-[#0f1419] font-semibold text-xs disabled:opacity-50"
+                  >
+                    {sjtLoading ? 'Generating with Gemini...' : 'Generate Themed SJT'}
+                  </button>
+                </div>
+
+                {sjtScenarios.map((sc, idx) => {
+                  const picked = sjtAnswers.find((a) => a.id === sc.id);
+                  return (
+                    <div key={sc.id || idx} className="p-2.5 rounded-lg bg-[#161d26] border border-slate-800 space-y-2 text-xs">
+                      <div className="text-slate-200 font-medium">{idx + 1}. {sc.prompt}</div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                        {(sc.choices || []).map((ch, cIdx) => {
+                          const selected = picked?.label === ch.label;
+                          return (
+                            <button
+                              key={cIdx}
+                              onClick={() => {
+                                setSjtAnswers((prev) => [
+                                  ...prev.filter((a) => a.id !== sc.id),
+                                  { id: sc.id, label: ch.label, leaning: ch.leaning },
+                                ]);
+                              }}
+                              className={`text-left px-2.5 py-1.5 rounded border text-[11px] ${
+                                selected
+                                  ? 'bg-amber-500/20 border-amber-400 text-amber-200'
+                                  : 'bg-[#0f1419] border-slate-700 text-slate-300 hover:border-teal-400'
+                              }`}
+                            >
+                              {ch.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
               <input
                 placeholder="Character Name"
@@ -352,69 +431,6 @@ export default function ChatPane() {
               />
             </div>
 
-            {setupForm.creationMethod === "SJT" && (
-              <div className="p-3.5 rounded-xl bg-[#0f1419] border border-teal-500/40 space-y-3">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-mono text-teal-300">
-                    PROCEDURAL WORLD-THEMED SJT ({sjtAnswers.length}/{sjtScenarios.length || 5} answered)
-                  </span>
-                  <button
-                    disabled={sjtLoading}
-                    onClick={async () => {
-                      setSjtLoading(true);
-                      try {
-                        const res = await apiClient.generateThemedSjt(campaignState.id, {
-                          stage: sjtScenarios.length === 0 ? "foundation" : "adaptive",
-                          count: 5,
-                          previousAnswers: sjtAnswers,
-                          model: selectedModel,
-                          thinkingLevel,
-                        });
-                        setSjtScenarios(res.scenarios || []);
-                        setSjtAnswers([]);
-                        notify("Generated world-themed SJT scenarios with Gemini.", "success");
-                      } catch (err) {
-                        notify(err.message, "error");
-                      } finally {
-                        setSjtLoading(false);
-                      }
-                    }}
-                    className="px-3 py-1 rounded bg-teal-500 text-[#0f1419] font-semibold text-xs disabled:opacity-50"
-                  >
-                    {sjtLoading ? "Generating with Gemini..." : "Generate Themed SJT"}
-                  </button>
-                </div>
-                {sjtScenarios.map((sc, idx) => {
-                  const picked = sjtAnswers.find((a) => a.id === sc.id);
-                  return (
-                    <div key={sc.id || idx} className="p-2.5 rounded-lg bg-[#161d26] border border-slate-800 space-y-2 text-xs">
-                      <div className="text-slate-200 font-medium">{idx + 1}. {sc.prompt}</div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                        {(sc.choices || []).map((ch, cIdx) => (
-                          <button
-                            key={cIdx}
-                            onClick={() => {
-                              setSjtAnswers((prev) => [
-                                ...prev.filter((a) => a.id !== sc.id),
-                                { id: sc.id, label: ch.label, leaning: ch.leaning },
-                              ]);
-                            }}
-                            className={`text-left px-2.5 py-1.5 rounded border text-[11px] ${
-                              picked?.label === ch.label
-                                ? "bg-amber-500/20 border-amber-400 text-amber-200"
-                                : "bg-[#0f1419] border-slate-700 text-slate-300 hover:border-teal-400"
-                            }`}
-                          >
-                            {ch.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
             <button
               onClick={() => runSetupStep('character_creation', { ...setupForm, sjtAnswers })}
               className="px-4 py-2 rounded-lg bg-amber-500 text-[#0f1419] font-semibold text-xs"
@@ -426,7 +442,6 @@ export default function ChatPane() {
 
         {isSetup && step === 'portrait_approval' && <PortraitApprovalCard />}
 
-        {/* Narrative Chat Stream */}
         {(campaignState.chatLog || []).map((msg) => (
           <div
             key={msg.id}
