@@ -9,6 +9,9 @@ const {
   generateSjtScenarios,
   advanceSetupStep,
 } = require('../engine/setupMachine');
+const { buildNarratorSystemPrompt } = require('../engine/narratorPrompt');
+const { encodeOutboundToon, parseWithOneShotRepair } = require('../services/toonCodec');
+const { decryptToken, callNarratorLLM } = require('../services/llmGateway');
 
 const router = express.Router();
 
@@ -92,6 +95,70 @@ router.post('/:campaignId/setup/:step', async (req, res) => {
     const result = advanceSetupStep(doc.data(), req.params.step, req.body || {});
     if (!result.ok) {
       return res.status(400).json(result);
+    }
+
+    // On world_ignition, immediately invoke the connected LLM to synthesize the opening scene
+    if (result.ignited) {
+      const vaultDoc = await getDb()
+        .collection('users')
+        .doc(req.user.uid)
+        .collection('profile')
+        .doc('oauth_vault')
+        .get();
+      const vault = vaultDoc.exists ? vaultDoc.data() : {};
+      const byokKey = decryptToken(vault.byokKeyEnc);
+      const provider = vault.byokProvider || 'gemini';
+      const model = req.body?.model || (provider === 'gemini' ? 'gemini-2.5-flash' : provider === 'openai' ? 'gpt-4o-mini' : 'claude-sonnet-4-20250514');
+      const thinkingLevel = req.body?.thinkingLevel || 'Mid';
+
+      if (byokKey) {
+        try {
+          const bootToon = encodeOutboundToon({
+            campaignState: result.campaignState,
+            chronoSeedValue: result.campaignState.metaData?.chronoSeedInitial || 14,
+            manifestRows: [],
+            flags: { primacyLock: true },
+            userVerbatim: 'WORLD_IGNITION: Synthesize the opening scene strictly from our setup parameters, introduce the immediate sensory environment, and end on a concrete tension hook.',
+          });
+          const systemPrompt = buildNarratorSystemPrompt(result.campaignState);
+          const raw = await callNarratorLLM({
+            provider,
+            accessToken: byokKey,
+            model,
+            thinkingLevel,
+            systemPrompt,
+            userPrompt: bootToon,
+          });
+          const parsed = await parseWithOneShotRepair(raw, async (badRaw, errMsg) =>
+            callNarratorLLM({
+              provider,
+              accessToken: byokKey,
+              model,
+              thinkingLevel,
+              systemPrompt,
+              userPrompt: `REPAIR REQUIRED (${errMsg}). Re-emit valid ---TOON_META--- and ---NARRATIVE--- sections:\n${badRaw}`,
+            })
+          );
+          const openingText = parsed.ok ? parsed.narrative : raw;
+          result.campaignState.sceneMemory.currentScene.summary =
+            (parsed.ok && parsed.meta?.sceneLog?.sum) || 'Campaign world ignited.';
+          result.campaignState.chatLog = result.campaignState.chatLog || [];
+          result.campaignState.chatLog.push({
+            id: 'n_0_ignition',
+            role: 'narrator',
+            text: openingText,
+            timestamp: new Date().toISOString(),
+          });
+        } catch (llmErr) {
+          result.campaignState.chatLog = result.campaignState.chatLog || [];
+          result.campaignState.chatLog.push({
+            id: 'sys_ignition_err',
+            role: 'system',
+            text: `World ignited, but opening narration failed: ${llmErr.message}`,
+            timestamp: new Date().toISOString(),
+          });
+        }
+      }
     }
 
     await ref.set(result.campaignState);
