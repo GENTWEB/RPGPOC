@@ -1,0 +1,29 @@
+cat << 'EOF' > .gitignore
+# Dependencies (catches root, server/node_modules, and client/node_modules)
+node_modules/
+
+# Environment variables & OAuth/Firebase secrets
+.env
+.env.*
+!.env.example
+*serviceAccount*.json
+*firebase-adminsdk*.json
+*credentials*.json
+client_secret*.json
+
+# Exported player save files (from Drive/local testing)
+DeLaval_Save_*.json
+
+# Production builds & Vite/Firebase caches
+dist/
+build/
+.vite/
+.firebase/
+firebase-debug.log
+firestore-debug.log
+
+# Logs & OS files
+npm-debug.log*
+.DS_Store
+Thumbs.db
+EOF
