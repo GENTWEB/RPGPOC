@@ -45,7 +45,7 @@ router.post('/:campaignId', async (req, res) => {
     const {
       userInput = '',
       tacticalAction = null,
-      model = 'google/gemini-2.5-flash',
+      model = 'gemini-2.5-flash',
       thinkingLevel = 'Mid',
     } = req.body || {};
 
@@ -57,11 +57,11 @@ router.post('/:campaignId', async (req, res) => {
 
     const vaultDoc = await getDb().collection('users').doc(uid).collection('profile').doc('oauth_vault').get();
     const vault = vaultDoc.exists ? vaultDoc.data() : {};
-    const orToken = decryptToken(req.cookies?.dl_or_token || vault.openrouterTokenEnc);
+    const byokKey = decryptToken(vault.byokKeyEnc);
     const googleToken = decryptToken(req.cookies?.dl_google_token || vault.googleTokenEnc);
 
-    const provider = orToken ? 'openrouter' : 'google';
-    const accessToken = orToken || googleToken;
+    const provider = vault.byokProvider || "gemini";
+    const accessToken = byokKey;
 
     const archivist = new ArchivistService();
     const mediaPipeline = new MediaPipeline({ archivist });

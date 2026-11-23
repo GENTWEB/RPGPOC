@@ -13,13 +13,14 @@ export function GameProvider({ children }) {
     driveConnected: false,
     models: [],
   });
-  const [selectedModel, setSelectedModel] = useState('google/gemini-2.5-flash');
+  const [selectedModel, setSelectedModel] = useState('gemini-2.5-flash');
   const [thinkingLevel, setThinkingLevel] = useState('Mid');
   const [campaigns, setCampaigns] = useState([]);
   const [campaignState, setCampaignState] = useState(null);
   const [pendingPortrait, setPendingPortrait] = useState(null);
   const [lightboxImage, setLightboxImage] = useState(null);
   const [oocDrawerOpen, setOocDrawerOpen] = useState(false);
+  const [byokModalOpen, setByokModalOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [statusToast, setStatusToast] = useState(null);
 
@@ -93,13 +94,22 @@ export function GameProvider({ children }) {
     }
   };
 
-  const handleConnectAIProvider = async () => {
+  const handleConnectAIProvider = () => {
+    setByokModalOpen(true);
+  };
+
+  const saveByokKey = async (provider, apiKey) => {
+    setBusy(true);
     try {
-      const callbackUrl = `${window.location.origin}${window.location.pathname}`;
-      const { authUrl } = await apiClient.startOpenRouterOAuth(callbackUrl);
-      window.location.href = authUrl;
+      const res = await apiClient.saveByokKey(provider, apiKey);
+      setProviderStatus((prev) => ({ ...prev, ...res }));
+      if (res.models?.length > 0) setSelectedModel(res.models[0].id);
+      setByokModalOpen(false);
+      notify(`Connected ${provider.toUpperCase()} key (encrypted in your private vault).`, "success");
     } catch (err) {
-      notify(err.message, 'error');
+      notify(err.message, "error");
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -263,6 +273,9 @@ export function GameProvider({ children }) {
     statusToast,
     notify,
     handleGoogleSignIn,
+    byokModalOpen,
+    setByokModalOpen,
+    saveByokKey,
     handleConnectAIProvider,
     handleSignOut,
     startNewCampaign,

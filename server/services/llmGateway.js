@@ -30,126 +30,115 @@ function decryptToken(cipherText) {
   return decrypted.toString('utf8');
 }
 
-/**
- * Fetches available models dynamically for the authenticated OpenRouter or Google OAuth token,
- * tagging free-tier vs paid-tier models and permitted reasoning/thinking tiers.
- */
-async function fetchModelCatalog({ provider = 'openrouter', accessToken }) {
+async function fetchModelCatalog({ provider = 'gemini', accessToken }) {
   if (!accessToken) {
+    return { provider: null, connected: false, models: [] };
+  }
+
+  if (provider === 'openai') {
     return {
-      provider,
-      connected: false,
-      models: [],
+      provider: 'openai',
+      connected: true,
+      models: [
+        { id: 'gpt-4o-mini', name: 'GPT-4o Mini', tier: 'byok', contextLength: 128000, thinkingLevels: ['Low', 'Mid'] },
+        { id: 'gpt-4o', name: 'GPT-4o', tier: 'byok', contextLength: 128000, thinkingLevels: ['Low', 'Mid', 'Max'] },
+        { id: 'o3-mini', name: 'o3-mini', tier: 'byok', contextLength: 200000, thinkingLevels: ['Low', 'Mid', 'Max'] },
+      ],
     };
   }
 
-  if (provider === 'openrouter') {
-    const base = process.env.OPENROUTER_API_BASE || 'https://openrouter.ai/api/v1';
-    const resp = await fetch(`${base}/models`, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'HTTP-Referer': process.env.OPENROUTER_APP_URL || 'http://localhost:5173',
-        'X-Title': process.env.OPENROUTER_APP_NAME || 'De Laval Narrative RPG Engine v7.2',
-      },
-    });
-    if (!resp.ok) {
-      throw new Error(`OpenRouter model catalog request failed (${resp.status})`);
-    }
-    const json = await resp.json();
-    const models = (json.data || []).slice(0, 60).map((m) => {
-      const promptPrice = Number(m.pricing?.prompt || 0);
-      const isFree = promptPrice === 0;
-      const supportsReasoning = /thinking|reason|o1|o3|r1|claude-3\.7|claude-4|gemini-2\.5|pro/i.test(m.id);
-      return {
-        id: m.id,
-        name: m.name || m.id,
-        tier: isFree ? 'free' : 'paid',
-        contextLength: m.context_length || 32000,
-        thinkingLevels: supportsReasoning ? ['Low', 'Mid', 'Max'] : ['Low', 'Mid'],
-      };
-    });
-    return { provider, connected: true, models };
+  if (provider === 'anthropic') {
+    return {
+      provider: 'anthropic',
+      connected: true,
+      models: [
+        { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4', tier: 'byok', contextLength: 200000, thinkingLevels: ['Low', 'Mid', 'Max'] },
+        { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku', tier: 'byok', contextLength: 200000, thinkingLevels: ['Low', 'Mid'] },
+      ],
+    };
   }
 
-  // Direct Google OAuth Gemini fallback catalog
+  // Default: Direct Google Gemini (AI Studio BYOK)
   return {
-    provider: 'google',
+    provider: 'gemini',
     connected: true,
     models: [
-      { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', tier: 'free', contextLength: 1000000, thinkingLevels: ['Low', 'Mid', 'Max'] },
-      { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', tier: 'paid', contextLength: 1000000, thinkingLevels: ['Low', 'Mid', 'Max'] },
+      { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', tier: 'free/byok', contextLength: 1000000, thinkingLevels: ['Low', 'Mid', 'Max'] },
+      { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', tier: 'byok', contextLength: 1000000, thinkingLevels: ['Low', 'Mid', 'Max'] },
+      { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', tier: 'free/byok', contextLength: 1000000, thinkingLevels: ['Low', 'Mid'] },
     ],
   };
 }
 
-/**
- * Invokes the selected LLM provider (OpenRouter OAuth PKCE or Google OAuth Gemini)
- * without ever asking users for raw API keys.
- */
 async function callNarratorLLM({
-  provider = 'openrouter',
+  provider = 'gemini',
   accessToken,
-  model = 'google/gemini-2.5-flash',
+  model = 'gemini-2.5-flash',
   thinkingLevel = 'Mid',
   systemPrompt,
   userPrompt,
   imageBase64 = null,
 }) {
   if (!accessToken) {
-    throw new Error('No AI provider OAuth session connected. Click "Connect AI Provider" first.');
+    throw new Error('No AI key connected. Click "Connect AI" and add your personal Gemini, OpenAI, or Anthropic key.');
   }
 
   const budget = THINKING_BUDGETS[thinkingLevel] || THINKING_BUDGETS.Mid;
-  const userContent = imageBase64
-    ? [
-        { type: 'text', text: userPrompt },
-        { type: 'image_url', image_url: { url: imageBase64 } },
-      ]
-    : userPrompt;
 
-  if (provider === 'openrouter') {
-    const base = process.env.OPENROUTER_API_BASE || 'https://openrouter.ai/api/v1';
-    const resp = await fetch(`${base}/chat/completions`, {
+  if (provider === 'openai') {
+    const userContent = imageBase64
+      ? [{ type: 'text', text: userPrompt }, { type: 'image_url', image_url: { url: imageBase64 } }]
+      : userPrompt;
+    const resp = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${accessToken}`,
-        'HTTP-Referer': process.env.OPENROUTER_APP_URL || 'http://localhost:5173',
-        'X-Title': process.env.OPENROUTER_APP_NAME || 'De Laval Narrative RPG Engine v7.2',
-      },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
       body: JSON.stringify({
         model,
         max_tokens: budget.max_tokens,
-        reasoning: { effort: budget.effort },
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userContent },
         ],
       }),
     });
-    if (!resp.ok) {
-      const errBody = await resp.text();
-      throw new Error(`OpenRouter completion error (${resp.status}): ${errBody.slice(0, 200)}`);
-    }
+    if (!resp.ok) throw new Error(`OpenAI error (${resp.status}): ${(await resp.text()).slice(0, 200)}`);
     const data = await resp.json();
     return data.choices?.[0]?.message?.content || '';
   }
 
-  // Direct Google OAuth Gemini Generative Language API
+  if (provider === 'anthropic') {
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': accessToken,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: budget.max_tokens,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userPrompt }],
+      }),
+    });
+    if (!resp.ok) throw new Error(`Anthropic error (${resp.status}): ${(await resp.text()).slice(0, 200)}`);
+    const data = await resp.json();
+    return data.content?.map((c) => c.text || '').join('') || '';
+  }
+
+  // Default: Direct Google Gemini API (x-goog-api-key header)
   const geminiModel = model.replace(/^google\//, '');
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(geminiModel)}:generateContent`;
   const parts = [{ text: userPrompt }];
   if (imageBase64) {
     const match = imageBase64.match(/^data:([^;]+);base64,(.+)$/);
-    if (match) {
-      parts.push({ inline_data: { mime_type: match[1], data: match[2] } });
-    }
+    if (match) parts.push({ inline_data: { mime_type: match[1], data: match[2] } });
   }
   const resp = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${accessToken}`,
+      'x-goog-api-key': accessToken,
     },
     body: JSON.stringify({
       system_instruction: { parts: [{ text: systemPrompt }] },
@@ -157,10 +146,7 @@ async function callNarratorLLM({
       generationConfig: { maxOutputTokens: budget.max_tokens },
     }),
   });
-  if (!resp.ok) {
-    const errBody = await resp.text();
-    throw new Error(`Gemini completion error (${resp.status}): ${errBody.slice(0, 200)}`);
-  }
+  if (!resp.ok) throw new Error(`Gemini error (${resp.status}): ${(await resp.text()).slice(0, 200)}`);
   const data = await resp.json();
   return data.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join('') || '';
 }

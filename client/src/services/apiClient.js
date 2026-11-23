@@ -37,6 +37,7 @@ export const apiClient = {
     request('/auth/openrouter/start', { method: 'POST', body: JSON.stringify({ callbackUrl }) }),
   exchangeOpenRouterCode: (code) =>
     request('/auth/openrouter/exchange', { method: 'POST', body: JSON.stringify({ code }) }),
+  saveByokKey: (provider, apiKey) => request('/auth/byok', { method: 'POST', body: JSON.stringify({ provider, apiKey }) }),
   getModels: () => request('/auth/models'),
   disconnectProviders: () => request('/auth/disconnect', { method: 'POST' }),
 

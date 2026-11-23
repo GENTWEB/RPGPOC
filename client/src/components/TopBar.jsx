@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   RotateCcw,
   FastForward,
@@ -25,15 +25,21 @@ export default function TopBar() {
     rewind,
     fastForward,
     saveCloudAndDrive,
+    byokModalOpen,
+    setByokModalOpen,
+    saveByokKey,
     handleConnectAIProvider,
     handleSignOut,
   } = useGame();
 
+  const [byokProvider, setByokProvider] = useState('gemini');
+  const [byokKeyInput, setByokKeyInput] = useState('');
   const ruleset = campaignState?.metaData?.rulesetMode || 'CLASSIC_D20';
   const currentModelObj = providerStatus.models?.find((m) => m.id === selectedModel);
   const allowedThinking = currentModelObj?.thinkingLevels || ['Low', 'Mid', 'Max'];
 
   return (
+    <>
     <header className="h-14 shrink-0 px-4 bg-[#161d26] border-b border-slate-800 flex items-center justify-between gap-3">
       <div className="flex items-center gap-3 min-w-0">
         <div className="flex items-center gap-2">
@@ -156,5 +162,64 @@ export default function TopBar() {
         </button>
       </div>
     </header>
+    {byokModalOpen && (
+      <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+        <div className="w-full max-w-md rounded-xl bg-[#161d26] border border-slate-700 p-5 space-y-4 shadow-2xl">
+          <h3 className="text-sm font-mono font-bold text-amber-400 uppercase">Connect Your Personal AI Key (BYOK)</h3>
+          <p className="text-xs text-slate-300">
+            Encrypted with AES-256-GCM in your private Firestore vault. Usage stays 100% on your own account.
+          </p>
+          <div className="space-y-2 text-xs">
+            <label className="block text-slate-400">Provider</label>
+            <select
+              value={byokProvider}
+              onChange={(e) => setByokProvider(e.target.value)}
+              className="w-full rounded bg-[#0f1419] border border-slate-700 px-3 py-2 text-slate-100"
+            >
+              <option value="gemini">Google Gemini (AI Studio - Free Tier Available)</option>
+              <option value="openai">OpenAI (ChatGPT API)</option>
+              <option value="anthropic">Anthropic (Claude API)</option>
+            </select>
+            <label className="block text-slate-400 pt-1">API Key</label>
+            <input
+              type="password"
+              value={byokKeyInput}
+              onChange={(e) => setByokKeyInput(e.target.value)}
+              placeholder={byokProvider === "gemini" ? "AIza..." : byokProvider === "openai" ? "sk-..." : "sk-ant-..."}
+              className="w-full rounded bg-[#0f1419] border border-slate-700 px-3 py-2 text-slate-100 font-mono"
+            />
+            {byokProvider === "gemini" && (
+              <a
+                href="https://aistudio.google.com/apikey"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-block text-teal-400 underline pt-1"
+              >
+                Get a free Gemini API key in Google AI Studio
+              </a>
+            )}
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <button
+              onClick={() => setByokModalOpen(false)}
+              className="px-3 py-1.5 rounded bg-[#0f1419] border border-slate-700 text-xs text-slate-300"
+            >
+              Cancel
+            </button>
+            <button
+              disabled={busy || !byokKeyInput.trim()}
+              onClick={async () => {
+                await saveByokKey(byokProvider, byokKeyInput);
+                setByokKeyInput("");
+              }}
+              className="px-4 py-1.5 rounded bg-amber-500 text-[#0f1419] font-semibold text-xs disabled:opacity-40"
+            >
+              Save Encrypted Key
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }
