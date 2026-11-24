@@ -61,7 +61,7 @@ router.post('/:campaignId/upload-and-analyze', mediaLimiter, async (req, res) =>
       entityName = 'Protagonist',
       entityKind = 'character',
       targetGenerator = 'generic',
-      model = 'gemini-3.8-flash',
+      model = 'gemma-4-26b-a4b-it',
       caption = '',
     } = req.body || {};
 

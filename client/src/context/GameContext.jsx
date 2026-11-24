@@ -14,7 +14,8 @@ export function GameProvider({ children }) {
     driveConnected: false,
     models: [],
   });
-  const [selectedModel, setSelectedModel] = useState('gemini-3.8-flash');
+  const [selectedModel, setSelectedModel] = useState(() => localStorage.getItem('delaval_selected_model') || 'gemma-4-26b-a4b-it');
+  useEffect(() => { if (selectedModel) localStorage.setItem('delaval_selected_model', selectedModel); }, [selectedModel]);
   const [thinkingLevel, setThinkingLevelState] = useState(() => localStorage.getItem('dl_thinking_level') || 'Max');
   const setThinkingLevel = (lvl) => { localStorage.setItem('dl_thinking_level', lvl); setThinkingLevelState(lvl); };
   const [involvementLevel, setInvolvementLevel] = useState(1);
@@ -103,7 +104,7 @@ export function GameProvider({ children }) {
       ]);
       setProviderStatus(catalog);
       if (catalog.models?.length > 0) {
-        setSelectedModel((prev) => (catalog.models.some((m) => m.id === prev) ? prev : catalog.models[0].id));
+        setSelectedModel((prev) => (catalog.models.some((m) => m.id === prev) ? prev : (catalog.models.find((m) => m.id === 'gemma-4-26b-a4b-it')?.id || catalog.models[0].id)));
       }
       setCampaigns(campList.campaigns || []);
       setDraftCampaign(campList.draftCampaign || null);
@@ -155,7 +156,7 @@ export function GameProvider({ children }) {
     try {
       const res = await apiClient.saveByokKey(provider, apiKey);
       setProviderStatus((prev) => ({ ...prev, ...res }));
-      if (res.models?.length > 0) setSelectedModel(res.models[0].id);
+      if (res.models?.length > 0) setSelectedModel((res.models.find((m) => m.id === 'gemma-4-26b-a4b-it') || res.models[0]).id);
       setByokModalOpen(false);
       notify(`Connected ${provider.toUpperCase()} cleanly.`, 'success');
     } catch (err) {
