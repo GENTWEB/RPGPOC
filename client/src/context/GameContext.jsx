@@ -15,6 +15,7 @@ export function GameProvider({ children }) {
   });
   const [selectedModel, setSelectedModel] = useState('gemini-3.8-flash');
   const [thinkingLevel, setThinkingLevel] = useState('Mid');
+  const [involvementLevel, setInvolvementLevel] = useState(1);
   const [campaigns, setCampaigns] = useState([]);
   const [draftCampaign, setDraftCampaign] = useState(null);
   const [campaignState, setCampaignState] = useState(null);
@@ -81,6 +82,7 @@ export function GameProvider({ children }) {
       notify('Signed in with Google.', 'success');
     } catch (err) {
       notify(err.message, 'error');
+      return false;
     } finally {
       setBusy(false);
     }
@@ -180,6 +182,7 @@ export function GameProvider({ children }) {
       const res = isSetupMode
         ? await apiClient.setupChat(campaignState.id, {
             message: userInput,
+            involvementLevel,
             model: selectedModel,
             thinkingLevel,
           })
@@ -197,6 +200,7 @@ export function GameProvider({ children }) {
       } else if (res.systemMessage) {
         notify(res.systemMessage, 'info');
       }
+      return true;
     } catch (err) {
       // Remove optimistic message on failure so user can retry cleanly
       setCampaignState((prev) => ({
@@ -307,6 +311,8 @@ export function GameProvider({ children }) {
     setSelectedModel,
     thinkingLevel,
     setThinkingLevel,
+    involvementLevel,
+    setInvolvementLevel,
     campaigns,
     draftCampaign,
     campaignState,

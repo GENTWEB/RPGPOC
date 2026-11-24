@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Send, Paperclip, Terminal, Shield, Eye } from 'lucide-react';
 import { useGame } from '../context/GameContext';
+
+const DRAFT_KEY = 'dl_composer_draft';
 
 const OOC_SHORTCUTS = [
   { label: 'Paint Panel', cmd: 'analysis: paintMeAPicture' },
@@ -13,16 +15,23 @@ const OOC_SHORTCUTS = [
 
 export default function ComposerBar({ onUploadImage }) {
   const { submitTurn, busy, oocDrawerOpen, campaignState } = useGame();
-  const [text, setText] = useState('');
+  const [text, setText] = useState(() => localStorage.getItem(DRAFT_KEY) || '');
   const [tacticalAction, setTacticalAction] = useState(null);
+
+  useEffect(() => {
+    localStorage.setItem(DRAFT_KEY, text);
+  }, [text]);
 
   const inCombat = Boolean(campaignState?.worldState?.combatState?.active);
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (!text.trim() || busy) return;
-    submitTurn(text, tacticalAction);
-    setText('');
-    setTacticalAction(null);
+    const ok = await submitTurn(text, tacticalAction);
+    if (ok) {
+      setText('');
+      localStorage.removeItem(DRAFT_KEY);
+      setTacticalAction(null);
+    }
   };
 
   const handleKeyDown = (e) => {
@@ -45,7 +54,7 @@ export default function ComposerBar({ onUploadImage }) {
       {oocDrawerOpen && (
         <div className="flex flex-wrap gap-1.5 pb-2 border-b border-slate-800">
           <span className="inline-flex items-center gap-1 text-[11px] font-mono text-teal-400 mr-1">
-            <Terminal className="w-3 h-3" /> OOC:
+            <Terminal className="w-3 h-3" /> Quick Commands:
           </span>
           {OOC_SHORTCUTS.map((s) => (
             <button
@@ -102,8 +111,8 @@ export default function ComposerBar({ onUploadImage }) {
           disabled={busy || !campaignState}
           placeholder={
             campaignState
-              ? 'Declare your action, dialogue, or OOC command (Enter to send)...'
-              : 'Start or load a campaign to begin...'
+              ? 'Type your message or action (saved automatically if an error happens)...'
+              : 'Start or load a story to begin...'
           }
           className="flex-1 resize-none rounded-lg bg-[#0f1419] border border-slate-700 focus:border-amber-500 focus:outline-none px-3 py-2 text-sm text-slate-100 placeholder-slate-500"
         />
@@ -112,7 +121,7 @@ export default function ComposerBar({ onUploadImage }) {
           onClick={handleSend}
           disabled={busy || !text.trim() || !campaignState}
           className="p-2.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-[#0f1419] font-semibold disabled:opacity-40"
-          title="Send Turn"
+          title="Send"
         >
           <Send className="w-4 h-4" />
         </button>
