@@ -11,7 +11,7 @@ const {
 } = require('../engine/setupMachine');
 const { buildNarratorSystemPrompt } = require('../engine/narratorPrompt');
 const { encodeOutboundToon, parseWithOneShotRepair } = require('../services/toonCodec');
-const { decryptToken, callNarratorLLM } = require('../services/llmGateway');
+const { decryptToken, callNarratorLLM, callNarratorLLMWithThinking } = require('../services/llmGateway');
 
 const router = express.Router();
 
@@ -39,18 +39,17 @@ async function getUserLlmCreds(uid, reqBody = {}) {
     provider,
     accessToken,
     model: reqBody.model || defaultModel,
-    thinkingLevel: reqBody.thinkingLevel || 'Mid',
+    thinkingLevel: reqBody.thinkingLevel === 'Max' ? 'Max' : 'Mid',
   };
 }
 
-router.get('/archetypes', (req, res) => {
-  return res.json(loadArchetypes());
-});
+router.get('/archetypes', (req, res) => res.json(loadArchetypes()));
+router.get('/sjt-scenarios', (req, res) => res.json(generateSjtScenarios()));
 
-router.get('/sjt-scenarios', (req, res) => {
-  return res.json(generateSjtScenarios());
-});
-
+/**
+ * Lists completed Saved Stories separately from any in-progress Draft Setup
+ * so unfinished setups never clutter the player's saved games list.
+ */
 router.get('/', async (req, res) => {
   try {
     const snap = await getDb()
@@ -59,18 +58,29 @@ router.get('/', async (req, res) => {
       .collection('campaigns')
       .get();
 
-    const campaigns = snap.docs.map((d) => {
-      const data = d.data();
-      return {
-        id: d.id,
-        settingDescription: data.globalState?.settingDescription || 'New Campaign',
-        rulesetMode: data.metaData?.rulesetMode || 'CLASSIC_D20',
-        turnNumber: data.metaData?.turnNumber || 0,
-        currentStep: data.narratorState?.currentStep || 'ignition',
-        updatedAt: data.metaData?.timestamp || null,
-      };
+    const all = snap.docs
+      .map((d) => {
+        const data = d.data();
+        return {
+          id: d.id,
+          settingDescription: data.globalState?.settingDescription || 'Untitled World',
+          rulesetMode: data.metaData?.rulesetMode || 'CLASSIC_D20',
+          turnNumber: data.metaData?.turnNumber || 0,
+          currentProcess: data.narratorState?.currentProcess || 'setup',
+          currentStep: data.narratorState?.currentStep || 'ignition',
+          setupCompleted: data.narratorState?.currentProcess === 'gameplayLoop',
+          updatedAt: data.metaData?.timestamp || '',
+        };
+      })
+      .sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
+
+    const campaigns = all.filter((c) => c.setupCompleted);
+    const drafts = all.filter((c) => !c.setupCompleted);
+    return res.json({
+      campaigns,
+      draftCampaign: drafts[0] || null,
+      draftCount: drafts.length,
     });
-    return res.json({ campaigns });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
@@ -99,23 +109,30 @@ router.post('/', async (req, res) => {
 router.get('/:campaignId', async (req, res) => {
   try {
     const doc = await getCampaignRef(req.user.uid, req.params.campaignId).get();
-    if (!doc.exists) return res.status(404).json({ error: 'Campaign not found.' });
+    if (!doc.exists) return res.status(404).json({ error: 'Story not found.' });
     return res.json({ campaignState: doc.data() });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
 });
 
-/**
- * Conversational Procedural Worldbuilding during Setup:
- * Lets the player brainstorm mashups (e.g. "Harry Potter meets Project Hail Mary")
- * directly with Gemini so Gemini reconciles contradictions and asks tailored follow-ups.
- */
+router.delete('/:campaignId', async (req, res) => {
+  try {
+    const ref = getCampaignRef(req.user.uid, req.params.campaignId);
+    const doc = await ref.get();
+    if (!doc.exists) return res.status(404).json({ error: 'Story not found.' });
+    await ref.delete();
+    return res.json({ deleted: true, campaignId: req.params.campaignId });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 router.post('/:campaignId/setup/chat', async (req, res) => {
   try {
     const ref = getCampaignRef(req.user.uid, req.params.campaignId);
     const doc = await ref.get();
-    if (!doc.exists) return res.status(404).json({ error: 'Campaign not found.' });
+    if (!doc.exists) return res.status(404).json({ error: 'Story not found.' });
 
     const state = doc.data();
     const message = String(req.body?.message || '').trim();
@@ -131,21 +148,19 @@ router.post('/:campaignId/setup/chat', async (req, res) => {
       .map((m) => `${m.role.toUpperCase()}: ${m.text}`)
       .join('\n');
 
-    const systemPrompt = `You are the Procedural Worldbuilding Architect for the De Laval Narrative RPG Engine (v7.2).
-Your job is to co-create a completely bespoke, non-cookie-cutter setting WITH the player during setup.
-- If the player pitches a mashup or contradiction (e.g. "Harry Potter meets Project Hail Mary"), enthusiastically propose 1-2 clever, grounded in-universe ways those genres fuse logically.
-- Ask 2-3 tight, evocative follow-up questions tailored strictly to their pitch (e.g. how tech & magic interact, era/date, narrator tone/influences, or core tension).
-- Never use generic boilerplate. Keep replies vivid, concise (under 180 words), and immediately actionable so the player can either keep refining or click Confirm Setting.`;
+    const systemPrompt = `You are a creative, approachable Game Master helping a player design a custom RPG world.
+- React enthusiastically to mashups or wild ideas by proposing 1-2 clever, grounded ways those elements fit together.
+- Ask 2-3 fun, easy-to-answer follow-up questions about how the world works, the vibe, or the main mystery.
+- NEVER output planning notes, meta-commentary, word counts, or drafting outlines—write ONLY your direct, friendly reply to the player (under 160 words).`;
 
-    const userPrompt = `CURRENT SETUP STAGE: ${state.narratorState?.currentStep}
-CURRENT SETTING DRAFT: ${state.globalState?.settingDescription || '(none yet)'}
-RECENT SETUP CHAT:
+    const userPrompt = `CURRENT WORLD IDEA: ${state.globalState?.settingDescription || '(just starting)'}
+CONVERSATION SO FAR:
 ${recentChat || '(first message)'}
 
-PLAYER INPUT:
+PLAYER SAYS:
 ${message}`;
 
-    const reply = await callNarratorLLM({
+    const { text: reply, thinking } = await callNarratorLLMWithThinking({
       ...creds,
       systemPrompt,
       userPrompt,
@@ -154,33 +169,29 @@ ${message}`;
     const now = new Date().toISOString();
     state.chatLog = state.chatLog || [];
     state.chatLog.push({ id: `su_${Date.now()}`, role: 'player', text: message, timestamp: now });
-    state.chatLog.push({ id: `sn_${Date.now() + 1}`, role: 'narrator', text: reply, timestamp: now });
+    state.chatLog.push({ id: `sn_${Date.now() + 1}`, role: 'narrator', text: reply, thinking: thinking || null, timestamp: now });
 
-    // Capture the first pitch into settingDescription if still blank
     if (!state.globalState.settingDescription) {
       state.globalState.settingDescription = message;
     }
+    state.metaData.timestamp = now;
 
     await ref.set(state);
-    return res.json({ reply, campaignState: state });
+    return res.json({ reply, thinking, campaignState: state });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
 });
 
-/**
- * Procedurally generates world-themed Situational Judgement Test (SJT) scenarios
- * using Gemini based on the exact synthesized world and setup conversation.
- */
 router.post('/:campaignId/setup/sjt/generate', async (req, res) => {
   try {
     const ref = getCampaignRef(req.user.uid, req.params.campaignId);
     const doc = await ref.get();
-    if (!doc.exists) return res.status(404).json({ error: 'Campaign not found.' });
+    if (!doc.exists) return res.status(404).json({ error: 'Story not found.' });
 
     const state = doc.data();
     const stage = req.body?.stage === 'adaptive' ? 'adaptive' : 'foundation';
-    const count = Math.min(15, Math.max(3, Number(req.body?.count) || (stage === 'foundation' ? 5 : 5)));
+    const count = Math.min(15, Math.max(3, Number(req.body?.count) || 5));
     const previousAnswers = Array.isArray(req.body?.previousAnswers) ? req.body.previousAnswers : [];
 
     const creds = await getUserLlmCreds(req.user.uid, req.body);
@@ -193,49 +204,41 @@ router.post('/:campaignId/setup/sjt/generate', async (req, res) => {
       .map((m) => `${m.role}: ${m.text}`)
       .join('\n');
 
-    const systemPrompt = `You generate bespoke, world-native Situational Judgement Test (SJT) dilemmas for the De Laval RPG Engine.
-Return ONLY valid JSON (no markdown fences, no commentary) matching this exact schema:
+    const systemPrompt = `Create bespoke "What would you do?" character-building scenarios rooted strictly in this player's custom world.
+Return ONLY valid JSON (no markdown fences, no commentary):
 {
   "scenarios": [
     {
       "id": "sjt_1",
-      "prompt": "A vivid 1-2 sentence dilemma rooted strictly in this exact world.",
+      "prompt": "A vivid 1-2 sentence situation in this exact world.",
       "choices": [
-        { "label": "Action A", "leaning": "intellect" },
-        { "label": "Action B", "leaning": "agility" },
-        { "label": "Action C", "leaning": "charisma" },
-        { "label": "Action D", "leaning": "strength" }
+        { "label": "Choice A", "leaning": "intellect" },
+        { "label": "Choice B", "leaning": "agility" },
+        { "label": "Choice C", "leaning": "charisma" },
+        { "label": "Choice D", "leaning": "strength" }
       ]
     }
   ]
 }
-Allowed leaning values ONLY: "strength", "agility", "intellect", "charisma", "perception", "constitution", "luck".
-Zero generic fantasy/sci-fi boilerplate—every dilemma must reference the specific mashup, tech/magic rules, and tone of this campaign.`;
+Allowed leaning values ONLY: "strength", "agility", "intellect", "charisma", "perception", "constitution", "luck".`;
 
-    const userPrompt = `WORLD SETTING: ${state.globalState?.settingDescription}
-TECH LEVEL: ${state.globalState?.techLevel}
-NARRATOR STYLE: ${state.globalState?.narratorStyle}
-SETUP CONVERSATION:
+    const userPrompt = `WORLD: ${state.globalState?.settingDescription}
+TECH/MAGIC: ${state.globalState?.techLevel}
+VIBE: ${state.globalState?.narratorStyle}
+BRAINSTORM CHAT:
 ${setupTranscript}
-
 STAGE: ${stage} (generate exactly ${count} scenarios)
-PRIOR PLAYER SJT ANSWERS: ${JSON.stringify(previousAnswers)}`;
+PRIOR ANSWERS: ${JSON.stringify(previousAnswers)}`;
 
-    const raw = await callNarratorLLM({
-      ...creds,
-      systemPrompt,
-      userPrompt,
-    });
-
+    const raw = await callNarratorLLM({ ...creds, systemPrompt, userPrompt });
     const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
     const parsed = JSON.parse(cleaned);
     if (!Array.isArray(parsed.scenarios) || parsed.scenarios.length === 0) {
-      throw new Error('Model returned an empty SJT scenario list.');
+      throw new Error('Model returned an empty scenario list.');
     }
-
     return res.json({ stage, scenarios: parsed.scenarios });
   } catch (err) {
-    return res.status(500).json({ error: `Failed to generate themed SJT: ${err.message}` });
+    return res.status(500).json({ error: `Could not generate personality scenarios: ${err.message}` });
   }
 });
 
@@ -243,7 +246,7 @@ router.post('/:campaignId/setup/:step', async (req, res) => {
   try {
     const ref = getCampaignRef(req.user.uid, req.params.campaignId);
     const doc = await ref.get();
-    if (!doc.exists) return res.status(404).json({ error: 'Campaign not found.' });
+    if (!doc.exists) return res.status(404).json({ error: 'Story not found.' });
 
     const result = advanceSetupStep(doc.data(), req.params.step, req.body || {});
     if (!result.ok) return res.status(400).json(result);
@@ -257,10 +260,10 @@ router.post('/:campaignId/setup/:step', async (req, res) => {
             chronoSeedValue: result.campaignState.metaData?.chronoSeedInitial || 14,
             manifestRows: [],
             flags: { primacyLock: true },
-            userVerbatim: 'WORLD_IGNITION: Synthesize the opening scene strictly from our setup conversation and parameters, introduce the immediate sensory environment, and end on a concrete tension hook.',
+            userVerbatim: 'WORLD_IGNITION: Open the story right in the middle of an evocative scene built strictly from our setup conversation, and end on a clear hook for the player.',
           });
           const systemPrompt = buildNarratorSystemPrompt(result.campaignState);
-          const raw = await callNarratorLLM({
+          const { text: raw, thinking } = await callNarratorLLMWithThinking({
             ...creds,
             systemPrompt,
             userPrompt: bootToon,
@@ -274,12 +277,13 @@ router.post('/:campaignId/setup/:step', async (req, res) => {
           );
           const openingText = parsed.ok ? parsed.narrative : raw;
           result.campaignState.sceneMemory.currentScene.summary =
-            (parsed.ok && parsed.meta?.sceneLog?.sum) || 'Campaign world ignited.';
+            (parsed.ok && parsed.meta?.sceneLog?.sum) || 'The adventure begins.';
           result.campaignState.chatLog = result.campaignState.chatLog || [];
           result.campaignState.chatLog.push({
             id: 'n_0_ignition',
             role: 'narrator',
             text: openingText,
+            thinking: thinking || null,
             timestamp: new Date().toISOString(),
           });
         } catch (llmErr) {
@@ -287,13 +291,14 @@ router.post('/:campaignId/setup/:step', async (req, res) => {
           result.campaignState.chatLog.push({
             id: 'sys_ignition_err',
             role: 'system',
-            text: `World ignited, but opening narration failed: ${llmErr.message}`,
+            text: `Your world is ready, but the opening scene hit a snag: ${llmErr.message}`,
             timestamp: new Date().toISOString(),
           });
         }
       }
     }
 
+    result.campaignState.metaData.timestamp = new Date().toISOString();
     await ref.set(result.campaignState);
     if (result.ignited) {
       await ref.collection('snapshots').doc('0').set({
