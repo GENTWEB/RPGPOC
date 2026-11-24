@@ -48,7 +48,7 @@ async function getUserLlmCreds(uid, reqBody = {}) {
   const provider = vault.byokProvider || 'gemini';
   const defaultModel =
     provider === 'gemini'
-      ? 'gemini-3.8-flash'
+      ? 'gemma-4-26b-a4b-it'
       : provider === 'openai'
       ? 'gpt-4o-mini'
       : 'claude-sonnet-4-20250514';
@@ -280,13 +280,13 @@ PRIOR ANSWERS: ${JSON.stringify(previousAnswers)}`;
 });
 
 router.post('/:campaignId/setup/:step', async (req, res) => {
-  try {
+  return withHerokuKeepAlive(res, async () => {
     const ref = getCampaignRef(req.user.uid, req.params.campaignId);
     const doc = await ref.get();
-    if (!doc.exists) return res.status(404).json({ error: 'Story not found.' });
+    if (!doc.exists) throw new Error('Story not found.');
 
     const result = advanceSetupStep(doc.data(), req.params.step, req.body || {});
-    if (!result.ok) return res.status(400).json(result);
+    if (!result.ok) throw new Error(result.error || 'Setup step failed.');
 
     if (result.ignited) {
       const creds = await getUserLlmCreds(req.user.uid, req.body);
@@ -345,10 +345,8 @@ router.post('/:campaignId/setup/:step', async (req, res) => {
       });
     }
 
-    return res.json(result);
-  } catch (err) {
-    return res.status(500).json({ error: err.message });
-  }
+    return result;
+  });
 });
 
 module.exports = router;

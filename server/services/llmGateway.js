@@ -16,7 +16,7 @@ function describeModel(id, displayName) {
       description: 'Lightweight, fun, faster than walking, sometimes makes mistakes',
       speedIcon: '🛹',
       speedScore: 6,
-      sortRank: 90,
+      sortRank: 110,
     };
   }
   if (lower.includes('gemma-4-31b')) {
@@ -140,7 +140,7 @@ async function fetchWithTimeoutAndRetry(url, options, maxRetries = 1) {
   let resp;
   for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 120000);
+    const timer = setTimeout(() => controller.abort(), 180000);
     try {
       resp = await fetch(url, { ...options, signal: controller.signal });
     } finally {
@@ -221,7 +221,7 @@ async function fetchModelCatalog({ provider = 'gemini', accessToken }) {
 async function callNarratorLLMWithThinking({
   provider = 'gemini',
   accessToken,
-  model = 'gemini-3.8-flash',
+  model = 'gemma-4-26b-a4b-it',
   thinkingLevel = 'Mid',
   systemPrompt,
   userPrompt,

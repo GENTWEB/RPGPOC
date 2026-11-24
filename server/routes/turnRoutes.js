@@ -10,6 +10,23 @@ const { runPreSaveChecklist, upsertCampaignSaveToDrive } = require('../services/
 
 const router = express.Router();
 
+async function withHerokuKeepAlive(res, asyncWork) {
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.flushHeaders();
+  const timer = setInterval(() => {
+    try { res.write(" "); } catch (_) {}
+  }, 5000);
+  try {
+    const payload = await asyncWork();
+    clearInterval(timer);
+    return res.end(JSON.stringify(payload));
+  } catch (err) {
+    clearInterval(timer);
+    return res.end(JSON.stringify({ error: err.message }));
+  }
+}
+
+
 function buildSnapshotStore(uid, campaignId) {
   const snapsCol = getDb()
     .collection('users')
@@ -39,21 +56,19 @@ function buildSnapshotStore(uid, campaignId) {
 }
 
 router.post('/:campaignId', async (req, res) => {
-  try {
+  return withHerokuKeepAlive(res, async () => {
     const uid = req.user.uid;
     const { campaignId } = req.params;
     const {
       userInput = '',
       tacticalAction = null,
-      model = 'gemini-3.8-flash',
+      model = 'gemma-4-26b-a4b-it',
       thinkingLevel = 'Mid',
     } = req.body || {};
 
     const campaignRef = getDb().collection('users').doc(uid).collection('campaigns').doc(campaignId);
     const campaignDoc = await campaignRef.get();
-    if (!campaignDoc.exists) {
-      return res.status(404).json({ error: 'Campaign not found.' });
-    }
+    if (!campaignDoc.exists) throw new Error('Campaign not found.');
 
     const vaultDoc = await getDb().collection('users').doc(uid).collection('profile').doc('oauth_vault').get();
     const vault = vaultDoc.exists ? vaultDoc.data() : {};
@@ -106,10 +121,8 @@ router.post('/:campaignId', async (req, res) => {
       await campaignRef.set(result.campaignState);
     }
 
-    return res.json(result);
-  } catch (err) {
-    return res.status(500).json({ error: err.message });
-  }
+    return result;
+  });
 });
 
 router.post('/:campaignId/rewind', async (req, res) => {
