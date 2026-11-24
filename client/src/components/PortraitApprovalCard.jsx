@@ -11,6 +11,28 @@ const GENERATOR_OPTIONS = [
   { id: 'generic', label: 'Other / Custom Generator' },
 ];
 
+function compressImageToBase64(file, maxDim = 1024) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Could not read image file."));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("Invalid image format."));
+      img.onload = () => {
+        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", 0.85));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 export default function PortraitApprovalCard() {
   const {
     campaignState,
@@ -45,32 +67,29 @@ export default function PortraitApprovalCard() {
     }
   };
 
-  const handleUploadAndAnalyze = (e) => {
+  const handleUploadAndAnalyze = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async () => {
-      setAnalyzing(true);
-      try {
-        const pc = campaignState?.activeEntities?.players?.[0];
-        const res = await apiClient.uploadAndAnalyzeArt(campaignState.id, {
-          uploadedBase64: reader.result,
-          entityId: pc?.id || 'pc_1',
-          entityName: pc?.name || 'Protagonist',
-          entityKind: 'character',
-          targetGenerator: artTarget,
-          model: selectedModel,
-        });
-        setPendingPortrait({ portrait: res.portrait, renderProfile: res.renderProfile });
-        if (res.campaignState) setCampaignState({ ...res.campaignState });
-        notify('Image saved & Visual DNA locked for future prompts!', 'success');
-      } catch (err) {
-        notify(err.message, 'error');
-      } finally {
-        setAnalyzing(false);
-      }
-    };
-    reader.readAsDataURL(file);
+    setAnalyzing(true);
+    try {
+      const compressedBase64 = await compressImageToBase64(file, 1024);
+      const pc = campaignState?.activeEntities?.players?.[0];
+      const res = await apiClient.uploadAndAnalyzeArt(campaignState.id, {
+        uploadedBase64: compressedBase64,
+        entityId: pc?.id || "pc_1",
+        entityName: pc?.name || "Protagonist",
+        entityKind: "character",
+        targetGenerator: artTarget,
+        model: selectedModel,
+      });
+      setPendingPortrait({ portrait: res.portrait, renderProfile: res.renderProfile });
+      if (res.campaignState) setCampaignState({ ...res.campaignState });
+      notify("Image saved & Visual DNA locked for future prompts!", "success");
+    } catch (err) {
+      notify(err.message, "error");
+    } finally {
+      setAnalyzing(false);
+    }
   };
 
   const handleSkipArt = async () => {

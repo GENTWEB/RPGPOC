@@ -9,6 +9,23 @@ const { extractEmpiricalRenderProfile, assembleLodPrompt } = require('../engine/
 const { mediaLimiter } = require('../middleware/rateLimiter');
 
 const router = express.Router();
+
+async function withHerokuKeepAlive(res, asyncWork) {
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.flushHeaders();
+  const timer = setInterval(() => {
+    try { res.write(" "); } catch (_) {}
+  }, 5000);
+  try {
+    const payload = await asyncWork();
+    clearInterval(timer);
+    return res.end(JSON.stringify(payload));
+  } catch (err) {
+    clearInterval(timer);
+    return res.end(JSON.stringify({ error: err.message }));
+  }
+}
+
 const mediaPipeline = new MediaPipeline({ archivist: new ArchivistService() });
 
 router.post('/:campaignId/prompt', async (req, res) => {
@@ -35,7 +52,7 @@ router.post('/:campaignId/prompt', async (req, res) => {
 });
 
 router.post('/:campaignId/upload-and-analyze', mediaLimiter, async (req, res) => {
-  try {
+  return withHerokuKeepAlive(res, async () => {
     const uid = req.user.uid;
     const { campaignId } = req.params;
     const {
@@ -49,15 +66,15 @@ router.post('/:campaignId/upload-and-analyze', mediaLimiter, async (req, res) =>
     } = req.body || {};
 
     if (!uploadedBase64 || !String(uploadedBase64).startsWith('data:image/')) {
-      return res.status(400).json({ error: 'Please upload a valid PNG, JPG, or WEBP image.' });
+      throw new Error('Please upload a valid PNG, JPG, or WEBP image.');
     }
-    if (String(uploadedBase64).length > 6 * 1024 * 1024) {
-      return res.status(413).json({ error: 'Uploaded image exceeds 4 MB limit.' });
+    if (String(uploadedBase64).length > 10 * 1024 * 1024) {
+      throw new Error('Uploaded image exceeds size limit.');
     }
 
     const ref = getDb().collection('users').doc(uid).collection('campaigns').doc(campaignId);
     const doc = await ref.get();
-    if (!doc.exists) return res.status(404).json({ error: 'Story not found.' });
+    if (!doc.exists) throw new Error('Story not found.');
 
     const state = doc.data();
     const pc = state.activeEntities?.players?.[0] || { id: entityId, name: entityName };
@@ -112,10 +129,8 @@ router.post('/:campaignId/upload-and-analyze', mediaLimiter, async (req, res) =>
       }
     }
 
-    return res.json({ portrait, renderProfile, campaignState: state });
-  } catch (err) {
-    return res.status(500).json({ error: err.message });
-  }
+    return { portrait, renderProfile, campaignState: state };
+  });
 });
 
 router.post('/:campaignId/portrait', mediaLimiter, async (req, res) => {
