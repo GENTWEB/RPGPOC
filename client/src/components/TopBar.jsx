@@ -278,11 +278,6 @@ export default function TopBar({ inspectorActive = false, onToggleInspector = ()
           >
             <HelpCircle className="w-4 h-4" />
           </button>
-          <span className="hidden"
-          >
-            <Terminal className="w-4 h-4" />
-          </button>
-
           {!providerStatus.connected ? (
             <button
               onClick={handleConnectAIProvider}
