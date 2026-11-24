@@ -56,7 +56,7 @@ const BYOK_GUIDES = {
   },
 };
 
-export default function TopBar() {
+export default function TopBar({ inspectorActive = false, onToggleInspector = () => {}, onOpenTutorial = () => {} } = {}) {
   const {
     user,
     providerStatus,
@@ -268,6 +268,17 @@ export default function TopBar() {
                 : 'bg-[#0f1419] border-slate-700 text-slate-300 hover:border-slate-500'
             }`}
             title="Show quick game commands"
+          />
+          <button
+            onClick={onToggleInspector}
+            data-help-title="Help Me Inspector"
+            data-help="Turn this on and hover over any button or panel to learn what it does in plain English."
+            className={`p-1.5 rounded border text-xs font-mono ${inspectorActive ? "bg-teal-500/30 border-teal-400 text-teal-200" : "bg-[#0f1419] border-slate-700 text-slate-300 hover:border-teal-400"}`}
+            title="Help Me Inspector (hover anything for details)"
+          >
+            <HelpCircle className="w-4 h-4" />
+          </button>
+          <span className="hidden"
           >
             <Terminal className="w-4 h-4" />
           </button>
@@ -352,6 +363,12 @@ export default function TopBar() {
                   className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg bg-[#0f1419] hover:border-amber-500 border border-slate-800 text-slate-200"
                 >
                   <Sparkles className="w-4 h-4 text-amber-400" /> AI Provider &amp; Keys
+                </button>
+                <button
+                  onClick={() => { setNavMenuOpen(false); onOpenTutorial(); }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg bg-[#0f1419] hover:border-teal-400 border border-slate-800 text-slate-200"
+                >
+                  <HelpCircle className="w-4 h-4 text-teal-400" /> Guided Walkthrough &amp; Presets
                 </button>
               </div>
             </div>

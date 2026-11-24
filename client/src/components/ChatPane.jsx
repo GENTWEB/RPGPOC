@@ -45,7 +45,7 @@ function renderFormattedText(text) {
   });
 }
 
-export default function ChatPane() {
+export default function ChatPane({ onOpenTutorial = () => {} } = {}) {
   const {
     campaigns,
     draftCampaign,
@@ -97,6 +97,13 @@ export default function ChatPane() {
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [expandedThoughts, setExpandedThoughts] = useState({});
   const [pitchIdx, setPitchIdx] = useState(0);
+  useEffect(() => {
+    const preset = localStorage.getItem("dl_preset_pitch");
+    if (preset && campaignState?.narratorState?.currentStep === "setting") {
+      setSetupForm((p) => ({ ...p, settingDescription: preset }));
+      localStorage.removeItem("dl_preset_pitch");
+    }
+  }, [campaignState?.narratorState?.currentStep]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -339,6 +346,17 @@ export default function ChatPane() {
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
+      {isSetup && step === "setting" && (campaignState.chatLog || []).length > 0 && (
+        <div className="shrink-0 px-4 py-2 bg-[#161d26]/95 border-b border-amber-500/30 flex items-center justify-between gap-2">
+          <span className="text-xs text-slate-300 truncate">Ready with your world?</span>
+          <button
+            onClick={() => runSetupStep("setting", { settingDescription: setupForm.settingDescription || campaignState.globalState?.settingDescription || "Custom World" })}
+            className="px-3.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-[#0f1419] font-semibold text-xs shrink-0"
+          >
+            Lock World &amp; Continue →
+          </button>
+        </div>
+      )}
       <div className="flex-1 overflow-y-auto p-5 space-y-4">
         {isSetup && step === 'ignition' && (
           <div className="rounded-xl bg-[#161d26] border border-slate-700 p-5 space-y-3">
@@ -389,10 +407,19 @@ export default function ChatPane() {
               rows={3}
               value={setupForm.settingDescription}
               onChange={(e) => setSetupForm({ ...setupForm, settingDescription: e.target.value })}
-              placeholder={`Try: "${EXAMPLE_PITCHES[pitchIdx]}"`}
+              onKeyDown={(e) => { if (e.key === "`" && !setupForm.settingDescription.trim()) { e.preventDefault(); setSetupForm((p) => ({ ...p, settingDescription: EXAMPLE_PITCHES[pitchIdx] })); } }}
+              placeholder={`Press \` to use: "${EXAMPLE_PITCHES[pitchIdx]}"`}
               className="w-full rounded-lg bg-[#0f1419] border border-slate-700 p-3 text-sm text-slate-100 placeholder-slate-500"
             />
             <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setSetupForm((p) => ({ ...p, settingDescription: EXAMPLE_PITCHES[pitchIdx] }))}
+                className="px-3 py-2 rounded-lg bg-[#0f1419] border border-slate-700 hover:border-teal-400 text-slate-300 text-xs"
+                title="Insert the currently scrolling example pitch"
+              >
+                Use Example (`)
+              </button>
               <button
                 onClick={handleBrainstormSetting}
                 disabled={(involvementLevel !== 3 && !setupForm.settingDescription.trim()) || Boolean(thinkingStatus) || busy}
@@ -695,6 +722,11 @@ export default function ChatPane() {
                 )}
 
                 {msg.roll && <RollBadge roll={msg.roll} />}
+                {msg.usedModel && (
+                  <div className="mt-2 text-[10px] font-mono text-slate-500 text-right">
+                    {msg.fellBack ? `Fallback: ${msg.usedModel}` : `GM: ${msg.usedModel}`}
+                  </div>
+                )}
 
                 {msg.panel?.signedUrl && (
                   <div className="mt-3">

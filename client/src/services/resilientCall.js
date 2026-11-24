@@ -1,8 +1,13 @@
 const RETRY_DELAY_SECONDS = 13;
 
-function isBusyError(err) {
+function getErrorReason(err) {
   const msg = String(err?.message || err || '');
-  return /\b(503|429|502)\b|UNAVAILABLE|high demand|overloaded|quota|NetworkError|aborted/i.test(msg);
+  if (/\b503\b|UNAVAILABLE|high demand/i.test(msg)) return '503 High Demand';
+  if (/\b429\b|quota|rate limit/i.test(msg)) return '429 Rate Limit';
+  if (/\b502\b/i.test(msg)) return '502 Gateway';
+  if (/aborted|timeout/i.test(msg)) return 'Timeout';
+  if (/NetworkError|Failed to fetch/i.test(msg)) return 'Network';
+  return null;
 }
 
 function sleepWithCountdown(seconds, labelBuilder, onStatus, cancelRef) {
@@ -26,12 +31,6 @@ function sleepWithCountdown(seconds, labelBuilder, onStatus, cancelRef) {
   });
 }
 
-/**
- * Resilient LLM Orchestrator:
- *   1. Try primaryModel (initial + 2x retry with 13s prime countdown).
- *   2. On failure, auto-swap to fallbackModel (gemini-3.5-flash-lite) for 2 attempts (13s countdown between).
- *   3. If all attempts fail, throws { exhausted: true, cooldownSeconds: 75 }.
- */
 export async function runWithRetryAndFallback({
   primaryModel,
   fallbackModel = 'gemini-3.5-flash-lite',
@@ -42,7 +41,8 @@ export async function runWithRetryAndFallback({
   onStatus = () => {},
   cancelRef = null,
 }) {
-  // Phase 1: Primary model (1 initial + 2 retries = 3 tries)
+  let lastReason = 'Busy';
+
   for (let attempt = 0; attempt <= 2; attempt += 1) {
     if (cancelRef?.current) throw new Error('Request cancelled by user.');
     if (attempt === 0) {
@@ -50,7 +50,7 @@ export async function runWithRetryAndFallback({
     } else {
       await sleepWithCountdown(
         RETRY_DELAY_SECONDS,
-        (s) => `${primaryLabel} busy — retrying (${attempt}/2) in ${s}s...`,
+        (s) => `${primaryLabel} (${lastReason}) — retrying (${attempt}/2) in ${s}s...`,
         onStatus,
         cancelRef
       );
@@ -61,19 +61,20 @@ export async function runWithRetryAndFallback({
       const result = await invoke(primaryModel);
       return { result, usedModel: primaryModel, fellBack: false };
     } catch (err) {
-      if (!isBusyError(err) || cancelRef?.current) throw err;
+      const reason = getErrorReason(err);
+      if (!reason || cancelRef?.current) throw err;
+      lastReason = reason;
     }
   }
 
-  // Phase 2: Fallback model (2 attempts with 13s countdown between)
   if (fallbackModel && fallbackModel !== primaryModel) {
-    onStatus(`Retry failed — falling back to ${fallbackLabel} (trying 1/2)...`);
+    onStatus(`${primaryLabel} (${lastReason}) — falling back to ${fallbackLabel} (1/2)...`);
     for (let fbAttempt = 1; fbAttempt <= 2; fbAttempt += 1) {
       if (cancelRef?.current) throw new Error('Request cancelled by user.');
       if (fbAttempt === 2) {
         await sleepWithCountdown(
           RETRY_DELAY_SECONDS,
-          (s) => `${fallbackLabel} busy — retrying (${fbAttempt}/2) in ${s}s...`,
+          (s) => `${fallbackLabel} (${lastReason}) — retrying (2/2) in ${s}s...`,
           onStatus,
           cancelRef
         );
@@ -83,13 +84,15 @@ export async function runWithRetryAndFallback({
         const result = await invoke(fallbackModel);
         return { result, usedModel: fallbackModel, fellBack: true };
       } catch (err) {
-        if (!isBusyError(err) || cancelRef?.current) throw err;
+        const reason = getErrorReason(err);
+        if (!reason || cancelRef?.current) throw err;
+        lastReason = reason;
       }
     }
   }
 
   const exhaustedErr = new Error(
-    'All free attempts failed — switch to a paid tier in the GM menu or wait 75 seconds to try again.'
+    `All free attempts failed (${lastReason}) — switch to a paid tier in the GM menu or wait 75 seconds.`
   );
   exhaustedErr.exhausted = true;
   exhaustedErr.cooldownSeconds = 75;

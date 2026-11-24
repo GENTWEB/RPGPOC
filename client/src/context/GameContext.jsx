@@ -71,6 +71,14 @@ export function GameProvider({ children }) {
       if (out.fellBack) {
         notify(`Completed via fallback (${out.usedModel}).`, "info");
       }
+      if (out.result?.campaignState?.chatLog?.length) {
+        const log = out.result.campaignState.chatLog;
+        const lastMsg = log[log.length - 1];
+        if (lastMsg && lastMsg.role === "narrator") {
+          lastMsg.usedModel = out.usedModel;
+          lastMsg.fellBack = out.fellBack;
+        }
+      }
       return out.result;
     } catch (err) {
       if (err.exhausted && err.cooldownSeconds) {

@@ -17,6 +17,19 @@ export default function ComposerBar({ onUploadImage }) {
   const { submitTurn, busy, oocDrawerOpen, campaignState } = useGame();
   const [text, setText] = useState(() => localStorage.getItem(DRAFT_KEY) || '');
   const [tacticalAction, setTacticalAction] = useState(null);
+  const [inputHeight, setInputHeight] = useState(() => Number(localStorage.getItem('dl_composer_h')) || 64);
+  const startResize = (e) => {
+    const startY = e.clientY;
+    const startH = inputHeight;
+    const onMove = (ev) => {
+      const next = Math.min(260, Math.max(52, startH + (startY - ev.clientY)));
+      setInputHeight(next);
+      localStorage.setItem('dl_composer_h', String(next));
+    };
+    const onUp = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
 
   useEffect(() => {
     localStorage.setItem(DRAFT_KEY, text);
@@ -50,7 +63,8 @@ export default function ComposerBar({ onUploadImage }) {
   };
 
   return (
-    <div className="shrink-0 border-t border-slate-800 bg-[#161d26] p-3 space-y-2">
+    <div className="shrink-0 border-t border-slate-800 bg-[#161d26] px-3 pb-3 pt-1 space-y-2">
+      <div onMouseDown={startResize} title="Drag up or down to resize chat box" className="h-2 -mt-1 cursor-row-resize flex items-center justify-center group"><span className="w-10 h-1 rounded-full bg-slate-700 group-hover:bg-amber-400 transition" /></div>
       {oocDrawerOpen && (
         <div className="flex flex-wrap gap-1.5 pb-2 border-b border-slate-800">
           <span className="inline-flex items-center gap-1 text-[11px] font-mono text-teal-400 mr-1">
@@ -104,7 +118,7 @@ export default function ComposerBar({ onUploadImage }) {
         </label>
 
         <textarea
-          rows={2}
+          style={{ height: `${inputHeight}px` }}
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
