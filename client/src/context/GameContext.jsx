@@ -360,10 +360,14 @@ export function GameProvider({ children }) {
         portraitRef: pendingPortrait.portrait.storagePath,
         inferredPhysicalTraits: pendingPortrait.inferredPhysicalTraits,
       });
-      const ignited = await apiClient.advanceSetup(campaignState.id, 'world_ignition', {
-        model: selectedModel,
-        thinkingLevel,
-      });
+      const ignited = await runResilientLlmCall(
+        'Opening your world for the first time...',
+        (modelToUse) =>
+          apiClient.advanceSetup(campaignState.id, 'world_ignition', {
+            model: modelToUse,
+            thinkingLevel,
+          })
+      );
       setCampaignState({ ...(ignited.campaignState || approval.campaignState) });
       setPendingPortrait(null);
       await refreshCatalogAndCampaigns();

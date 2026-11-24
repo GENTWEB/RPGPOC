@@ -321,9 +321,13 @@ router.post('/:campaignId/setup/:step', async (req, res) => {
             role: 'narrator',
             text: openingText,
             thinking: thinking || null,
+            modelUsed: creds.model || null,
             timestamp: new Date().toISOString(),
           });
         } catch (llmErr) {
+          if (/503|429|UNAVAILABLE|overloaded|high demand|rate.?limit|quota|timeout/i.test(String(llmErr?.message || ""))) {
+            throw llmErr;
+          }
           result.campaignState.chatLog = result.campaignState.chatLog || [];
           result.campaignState.chatLog.push({
             id: 'sys_ignition_err',

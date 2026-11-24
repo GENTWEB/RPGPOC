@@ -171,24 +171,27 @@ router.post('/:campaignId/portrait', mediaLimiter, async (req, res) => {
 });
 
 router.post('/:campaignId/panel', mediaLimiter, async (req, res) => {
-  try {
+  return withHerokuKeepAlive(res, async () => {
     const uid = req.user.uid;
     const { campaignId } = req.params;
     const { brief = 'Key dramatic moment' } = req.body || {};
 
     const doc = await getDb().collection('users').doc(uid).collection('campaigns').doc(campaignId).get();
-    if (!doc.exists) return res.status(404).json({ error: 'Story not found.' });
+    if (!doc.exists) throw new Error('Story not found.');
+
+    const vaultDoc = await getDb().collection('users').doc(uid).collection('profile').doc('oauth_vault').get();
+    const vault = vaultDoc.exists ? vaultDoc.data() : {};
+    const accessToken = decryptToken(vault.byokKeyEnc);
 
     const panel = await mediaPipeline.generateScenePanel({
       uid,
       campaignId,
       brief,
       campaignState: doc.data(),
+      accessToken,
     });
-    return res.json({ panel });
-  } catch (err) {
-    return res.status(500).json({ error: err.message });
-  }
+    return { panel };
+  });
 });
 
 router.get('/signed-url', async (req, res) => {
