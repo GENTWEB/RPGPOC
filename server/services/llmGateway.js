@@ -3,9 +3,91 @@
 const crypto = require('crypto');
 
 const THINKING_BUDGETS = Object.freeze({
-  Mid: { effort: 'medium', max_tokens: 1800 },
-  Max: { effort: 'high', max_tokens: 3600 },
+  Mid: { effort: 'medium', max_tokens: 1400, thinkingBudget: 512 },
+  Max: { effort: 'high', max_tokens: 2600, thinkingBudget: 1536 },
 });
+
+function describeModel(id, displayName) {
+  const lower = String(id || '').toLowerCase();
+  if (lower.includes('gemma-4-26b')) {
+    return {
+      tierGroup: 'free',
+      costLabel: 'FREE',
+      description: 'Lightweight, fun, faster than walking, sometimes makes mistakes',
+      speedIcon: '🛹',
+      speedScore: 6,
+      sortRank: 90,
+    };
+  }
+  if (lower.includes('gemma-4-31b')) {
+    return {
+      tierGroup: 'free',
+      costLabel: 'FREE',
+      description: 'Lightweight, fun, efficient, more stable storytelling',
+      speedIcon: '🚲',
+      speedScore: 7,
+      sortRank: 95,
+    };
+  }
+  if (lower.includes('gemma')) {
+    return {
+      tierGroup: 'free',
+      costLabel: 'FREE',
+      description: 'Open-weights free model hosted on Google AI Studio',
+      speedIcon: '🛹',
+      speedScore: 6,
+      sortRank: 80,
+    };
+  }
+  if (lower.includes('3.8-flash')) {
+    return {
+      tierGroup: 'free',
+      costLabel: 'FREE (TRIAL)',
+      description: 'Recommended — sharp pacing, occasional peak-hour traffic',
+      speedIcon: '🚗',
+      speedScore: 8,
+      sortRank: 100,
+    };
+  }
+  if (lower.includes('flash-lite')) {
+    return {
+      tierGroup: 'free',
+      costLabel: 'FREE',
+      description: 'Ultra-fast responses, lighter prose depth',
+      speedIcon: '🏎️',
+      speedScore: 9,
+      sortRank: 85,
+    };
+  }
+  if (lower.includes('flash')) {
+    return {
+      tierGroup: 'free',
+      costLabel: 'FREE (TRIAL)',
+      description: 'Fast all-rounder for responsive turn-by-turn play',
+      speedIcon: '🚗',
+      speedScore: 8,
+      sortRank: 88,
+    };
+  }
+  if (lower.includes('neon') || lower.includes('pro') || lower.includes('hydrogen')) {
+    return {
+      tierGroup: 'paid',
+      costLabel: 'PAID',
+      description: 'Heavyweight reasoning & rich literary prose (requires API billing)',
+      speedIcon: '✈️',
+      speedScore: 7,
+      sortRank: 70,
+    };
+  }
+  return {
+    tierGroup: 'paid',
+    costLabel: 'PAID',
+    description: displayName || 'General-purpose Game Master model',
+    speedIcon: '🚗',
+    speedScore: 7,
+    sortRank: 50,
+  };
+}
 
 function getCipherKey() {
   const hex = process.env.TOKEN_ENCRYPTION_KEY || '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
@@ -29,11 +111,6 @@ function decryptToken(cipherText) {
   return decrypted.toString('utf8');
 }
 
-/**
- * Strips any leaked chain-of-thought blocks (XML <thought> tags or Gemma
- * scratchpad preambles like "* Player Input: ... * Word count: ~150 words.")
- * so only clean, player-facing prose reaches the chat bubble.
- */
 function stripThoughtLeaks(rawText) {
   let text = String(rawText || '');
   let extractedThought = '';
@@ -44,7 +121,6 @@ function stripThoughtLeaks(rawText) {
     text = text.replace(/<thought>[\s\S]*?<\/thought>/gi, '').trim();
   }
 
-  // Catch Gemma scratchpad leaks ending with "Word count: ... Perfect." or "* Refining Text:"
   const wordCountLeak = text.match(/^([\s\S]*?\*\s*Word count:[^\n]*?(?:Perfect\.|Good\.|Done\.|words\.))\s*([\s\S]+)$/i);
   if (wordCountLeak) {
     extractedThought = (extractedThought ? `${extractedThought}\n` : '') + wordCountLeak[1].trim();
@@ -60,13 +136,19 @@ function stripThoughtLeaks(rawText) {
   return { text: text.trim(), extractedThought: extractedThought.trim() };
 }
 
-async function fetchWithRetry(url, options, maxRetries = 2) {
+async function fetchWithTimeoutAndRetry(url, options, maxRetries = 1) {
   let resp;
   for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
-    resp = await fetch(url, options);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 21000);
+    try {
+      resp = await fetch(url, { ...options, signal: controller.signal });
+    } finally {
+      clearTimeout(timer);
+    }
     if (resp.status !== 503 && resp.status !== 502) return resp;
     if (attempt < maxRetries) {
-      await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+      await new Promise((r) => setTimeout(r, 1200));
     }
   }
   return resp;
@@ -82,9 +164,9 @@ async function fetchModelCatalog({ provider = 'gemini', accessToken }) {
       provider: 'openai',
       connected: true,
       models: [
-        { id: 'gpt-4o-mini', name: 'GPT-4o Mini', tier: 'byok', contextLength: 128000, thinkingLevels: ['Mid', 'Max'] },
-        { id: 'gpt-4o', name: 'GPT-4o', tier: 'byok', contextLength: 128000, thinkingLevels: ['Mid', 'Max'] },
-        { id: 'o3-mini', name: 'o3-mini', tier: 'byok', contextLength: 200000, thinkingLevels: ['Mid', 'Max'] },
+        { id: 'gpt-4o-mini', name: 'GPT-4o Mini', role: 'GM', tierGroup: 'paid', costLabel: 'LOW COST', description: 'Snappy, reliable, low token cost', speedIcon: '🏎️', speedScore: 9, thinkingLevels: ['Mid', 'Max'] },
+        { id: 'gpt-4o', name: 'GPT-4o', role: 'GM', tierGroup: 'paid', costLabel: 'PAID', description: 'Rich character voice & nuanced dialogue', speedIcon: '🚗', speedScore: 8, thinkingLevels: ['Mid', 'Max'] },
+        { id: 'o3-mini', name: 'o3-mini', role: 'GM', tierGroup: 'paid', costLabel: 'PAID', description: 'Deep tactical & puzzle reasoning', speedIcon: '🚲', speedScore: 6, thinkingLevels: ['Mid', 'Max'] },
       ],
     };
   }
@@ -94,8 +176,8 @@ async function fetchModelCatalog({ provider = 'gemini', accessToken }) {
       provider: 'anthropic',
       connected: true,
       models: [
-        { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4', tier: 'byok', contextLength: 200000, thinkingLevels: ['Mid', 'Max'] },
-        { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku', tier: 'byok', contextLength: 200000, thinkingLevels: ['Mid', 'Max'] },
+        { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4', role: 'GM', tierGroup: 'paid', costLabel: 'PAID', description: 'Standout literary prose & character depth', speedIcon: '🚗', speedScore: 8, thinkingLevels: ['Mid', 'Max'] },
+        { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku', role: 'GM', tierGroup: 'paid', costLabel: 'LOW COST', description: 'Quick, punchy narrative replies', speedIcon: '🏎️', speedScore: 9, thinkingLevels: ['Mid', 'Max'] },
       ],
     };
   }
@@ -107,21 +189,21 @@ async function fetchModelCatalog({ provider = 'gemini', accessToken }) {
     const data = await resp.json();
     const models = (data.models || [])
       .filter((m) => (m.supportedGenerationMethods || []).includes('generateContent'))
-      .filter((m) => /gemini|gemma/i.test(m.name) && !/embedding|aqa|tts|imagen|veo|image|banana|robotics|omni/i.test(m.name))
+      .filter((m) => /gemini|gemma/i.test(m.name) && !/embedding|aqa|tts|imagen|veo|image|banana|robotics|omni|exp|001/i.test(m.name))
       .map((m) => {
         const id = m.name.replace(/^models\//, '');
+        const meta = describeModel(id, m.displayName);
         return {
           id,
           name: m.displayName || id,
-          tier: /gemma/i.test(id) ? 'free' : 'byok',
+          role: 'GM',
+          tier: meta.costLabel,
+          ...meta,
           contextLength: m.inputTokenLimit || 1000000,
           thinkingLevels: ['Mid', 'Max'],
         };
       })
-      .sort((a, b) => {
-        const score = (id) => (id === 'gemini-3.8-flash' ? 3 : /3\.8.*flash/i.test(id) ? 2 : /gemma-4/i.test(id) ? 1.5 : /flash/i.test(id) ? 1 : 0);
-        return score(b.id) - score(a.id) || b.id.localeCompare(a.id);
-      });
+      .sort((a, b) => b.sortRank - a.sortRank || b.id.localeCompare(a.id));
     if (models.length > 0) {
       return { provider: 'gemini', connected: true, models };
     }
@@ -131,7 +213,7 @@ async function fetchModelCatalog({ provider = 'gemini', accessToken }) {
     provider: 'gemini',
     connected: true,
     models: [
-      { id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash', tier: 'byok', contextLength: 1000000, thinkingLevels: ['Mid', 'Max'] },
+      { id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash', role: 'GM', ...describeModel('gemini-3.8-flash'), thinkingLevels: ['Mid', 'Max'] },
     ],
   };
 }
@@ -155,7 +237,7 @@ async function callNarratorLLMWithThinking({
     const userContent = imageBase64
       ? [{ type: 'text', text: userPrompt }, { type: 'image_url', image_url: { url: imageBase64 } }]
       : userPrompt;
-    const resp = await fetchWithRetry('https://api.openai.com/v1/chat/completions', {
+    const resp = await fetchWithTimeoutAndRetry('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
       body: JSON.stringify({
@@ -174,7 +256,7 @@ async function callNarratorLLMWithThinking({
   }
 
   if (provider === 'anthropic') {
-    const resp = await fetchWithRetry('https://api.anthropic.com/v1/messages', {
+    const resp = await fetchWithTimeoutAndRetry('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -203,7 +285,7 @@ async function callNarratorLLMWithThinking({
     const match = imageBase64.match(/^data:([^;]+);base64,(.+)$/);
     if (match) parts.push({ inline_data: { mime_type: match[1], data: match[2] } });
   }
-  const resp = await fetchWithRetry(url, {
+  const resp = await fetchWithTimeoutAndRetry(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
