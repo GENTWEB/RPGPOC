@@ -2,11 +2,21 @@ import { auth } from './firebaseClient';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
 
+function getDeviceId() {
+  let id = localStorage.getItem("dl_device_id");
+  if (!id) {
+    id = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()));
+    localStorage.setItem("dl_device_id", id);
+  }
+  return id;
+}
+
 async function authHeaders() {
   const user = auth.currentUser;
   const token = user ? await user.getIdToken() : '';
   return {
     'Content-Type': 'application/json',
+    'X-Device-Id': getDeviceId(),
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
 }
@@ -65,6 +75,10 @@ export const apiClient = {
     request(`/turns/${campaignId}/fast-forward`, { method: 'POST' }),
 
   // Media Vault (Private 15-min signed URLs)
+  getArtPrompt: (campaignId, payload) =>
+    request(`/media/${campaignId}/prompt`, { method: "POST", body: JSON.stringify(payload) }),
+  uploadAndAnalyzeArt: (campaignId, payload) =>
+    request(`/media/${campaignId}/upload-and-analyze`, { method: "POST", body: JSON.stringify(payload) }),
   generatePortrait: (campaignId, payload) =>
     request(`/media/${campaignId}/portrait`, { method: 'POST', body: JSON.stringify(payload) }),
   generatePanel: (campaignId, brief) =>

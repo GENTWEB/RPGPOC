@@ -16,6 +16,8 @@ export function GameProvider({ children }) {
   const [selectedModel, setSelectedModel] = useState('gemini-3.8-flash');
   const [thinkingLevel, setThinkingLevel] = useState('Mid');
   const [involvementLevel, setInvolvementLevel] = useState(1);
+  const [artTarget, setArtTarget] = useState("nano_banana_web");
+  const [useImages, setUseImages] = useState(true);
   const [campaigns, setCampaigns] = useState([]);
   const [draftCampaign, setDraftCampaign] = useState(null);
   const [campaignState, setCampaignState] = useState(null);
@@ -250,7 +252,16 @@ export function GameProvider({ children }) {
       const driveMsg = res.driveSync?.synced
         ? `Saved to Cloud & Google Drive (${res.driveSync.fileName}).`
         : 'Saved to Cloud.';
-      notify(driveMsg, 'success');
+      if (res.encryptedSave) {
+        const blob = new Blob([JSON.stringify(res.encryptedSave)], { type: "application/octet-stream" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `DeLaval_${campaignState.id}.delaval`;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+      notify(driveMsg + " Encrypted .delaval backup downloaded.", "success");
     } catch (err) {
       notify(err.message, 'error');
     } finally {
@@ -313,6 +324,10 @@ export function GameProvider({ children }) {
     setThinkingLevel,
     involvementLevel,
     setInvolvementLevel,
+    artTarget,
+    setArtTarget,
+    useImages,
+    setUseImages,
     campaigns,
     draftCampaign,
     campaignState,

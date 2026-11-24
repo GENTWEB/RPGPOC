@@ -9,6 +9,7 @@ const cookieParser = require('cookie-parser');
 
 const { initFirebaseAdmin } = require('./config/firebaseAdmin');
 const { verifyAuth } = require('./middleware/verifyAuth');
+const { trackSession } = require('./middleware/trackSession');
 const { apiLimiter } = require('./middleware/rateLimiter');
 
 const authRoutes = require('./routes/authRoutes');
@@ -43,7 +44,7 @@ app.get('/health', (req, res) => {
 });
 
 // Zero-Leak JWT Gate applied to every /api/* route
-app.use('/api', verifyAuth, apiLimiter);
+app.use('/api', verifyAuth, trackSession, apiLimiter);
 app.use('/api/auth', authRoutes);
 app.use('/api/campaigns', campaignRoutes);
 app.use('/api/turns', turnRoutes);
