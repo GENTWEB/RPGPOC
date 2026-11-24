@@ -13,15 +13,18 @@ export function GameProvider({ children }) {
     driveConnected: false,
     models: [],
   });
-  const [selectedModel, setSelectedModel] = useState('gemini-2.5-flash');
+  const [selectedModel, setSelectedModel] = useState('gemini-3.8-flash');
   const [thinkingLevel, setThinkingLevel] = useState('Mid');
   const [campaigns, setCampaigns] = useState([]);
+  const [draftCampaign, setDraftCampaign] = useState(null);
   const [campaignState, setCampaignState] = useState(null);
   const [pendingPortrait, setPendingPortrait] = useState(null);
   const [lightboxImage, setLightboxImage] = useState(null);
   const [oocDrawerOpen, setOocDrawerOpen] = useState(false);
   const [byokModalOpen, setByokModalOpen] = useState(false);
+  const [navMenuOpen, setNavMenuOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [thinkingStatus, setThinkingStatus] = useState(null);
   const [statusToast, setStatusToast] = useState(null);
 
   const notify = useCallback((message, tone = 'info') => {
@@ -42,6 +45,7 @@ export function GameProvider({ children }) {
         setSelectedModel((prev) => (catalog.models.some((m) => m.id === prev) ? prev : catalog.models[0].id));
       }
       setCampaigns(campList.campaigns || []);
+      setDraftCampaign(campList.draftCampaign || null);
     } catch (err) {
       notify(err.message, 'error');
     }
@@ -56,18 +60,6 @@ export function GameProvider({ children }) {
           displayName: fbUser.displayName,
           photoURL: fbUser.photoURL,
         });
-        // Check for OpenRouter OAuth PKCE callback code in URL
-        const params = new URLSearchParams(window.location.search);
-        const orCode = params.get('code');
-        if (orCode) {
-          try {
-            await apiClient.exchangeOpenRouterCode(orCode);
-            window.history.replaceState({}, document.title, window.location.pathname);
-            notify('Connected AI Provider via OpenRouter OAuth PKCE.', 'success');
-          } catch (err) {
-            notify(`OpenRouter OAuth failed: ${err.message}`, 'error');
-          }
-        }
         await refreshCatalogAndCampaigns();
       } else {
         setUser(null);
@@ -86,7 +78,7 @@ export function GameProvider({ children }) {
         await apiClient.syncGoogleSession(googleAccessToken);
       }
       await refreshCatalogAndCampaigns();
-      notify('Signed in with Google & Drive sync enabled.', 'success');
+      notify('Signed in with Google.', 'success');
     } catch (err) {
       notify(err.message, 'error');
     } finally {
@@ -94,9 +86,7 @@ export function GameProvider({ children }) {
     }
   };
 
-  const handleConnectAIProvider = () => {
-    setByokModalOpen(true);
-  };
+  const handleConnectAIProvider = () => setByokModalOpen(true);
 
   const saveByokKey = async (provider, apiKey) => {
     setBusy(true);
@@ -105,9 +95,9 @@ export function GameProvider({ children }) {
       setProviderStatus((prev) => ({ ...prev, ...res }));
       if (res.models?.length > 0) setSelectedModel(res.models[0].id);
       setByokModalOpen(false);
-      notify(`Connected ${provider.toUpperCase()} key (encrypted in your private vault).`, "success");
+      notify(`Connected ${provider.toUpperCase()} cleanly.`, 'success');
     } catch (err) {
-      notify(err.message, "error");
+      notify(err.message, 'error');
     } finally {
       setBusy(false);
     }
@@ -116,16 +106,24 @@ export function GameProvider({ children }) {
   const handleSignOut = async () => {
     await logoutUser();
     setCampaignState(null);
+    setNavMenuOpen(false);
+  };
+
+  const returnToMainMenu = async () => {
+    setCampaignState(null);
+    setPendingPortrait(null);
+    setNavMenuOpen(false);
+    await refreshCatalogAndCampaigns();
   };
 
   const startNewCampaign = async (rulesetMode = 'CLASSIC_D20') => {
     setBusy(true);
     try {
       const res = await apiClient.createCampaign(rulesetMode);
-      setCampaignState(res.campaignState);
+      setCampaignState({ ...res.campaignState });
       setPendingPortrait(null);
+      setNavMenuOpen(false);
       await refreshCatalogAndCampaigns();
-      notify('New campaign initialized.', 'success');
     } catch (err) {
       notify(err.message, 'error');
     } finally {
@@ -137,8 +135,24 @@ export function GameProvider({ children }) {
     setBusy(true);
     try {
       const res = await apiClient.getCampaign(campaignId);
-      setCampaignState(res.campaignState);
-      notify('Campaign loaded from Firestore.', 'success');
+      setCampaignState({ ...res.campaignState });
+      setNavMenuOpen(false);
+    } catch (err) {
+      notify(err.message, 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const deleteCampaign = async (campaignId) => {
+    setBusy(true);
+    try {
+      await apiClient.deleteCampaign(campaignId);
+      if (campaignState?.id === campaignId) {
+        setCampaignState(null);
+      }
+      await refreshCatalogAndCampaigns();
+      notify('Story deleted.', 'info');
     } catch (err) {
       notify(err.message, 'error');
     } finally {
@@ -148,19 +162,35 @@ export function GameProvider({ children }) {
 
   const submitTurn = async (userInput, tacticalAction = null) => {
     if (!campaignState || !userInput.trim()) return;
+    const isSetupMode = campaignState.narratorState?.currentProcess === 'setup';
+    const optimisticId = `opt_${Date.now()}`;
+
+    // Immediately show the player's message + live thinking spinner so the chat never feels frozen
+    setCampaignState((prev) => ({
+      ...prev,
+      chatLog: [
+        ...(prev.chatLog || []),
+        { id: optimisticId, role: 'player', text: userInput, timestamp: new Date().toISOString() },
+      ],
+    }));
     setBusy(true);
+    setThinkingStatus(isSetupMode ? 'Co-creating your world...' : 'Game Master is weaving the next scene...');
+
     try {
-      const isSetupMode = campaignState.narratorState?.currentProcess === 'setup';
       const res = isSetupMode
-        ? await apiClient.setupChat(campaignState.id, { message: userInput, model: selectedModel, thinkingLevel })
+        ? await apiClient.setupChat(campaignState.id, {
+            message: userInput,
+            model: selectedModel,
+            thinkingLevel,
+          })
         : await apiClient.sendTurn(campaignState.id, {
-        userInput,
-        tacticalAction,
-        model: selectedModel,
-        thinkingLevel,
-      });
+            userInput,
+            tacticalAction,
+            model: selectedModel,
+            thinkingLevel,
+          });
       if (res.campaignState) {
-        setCampaignState(res.campaignState);
+        setCampaignState({ ...res.campaignState });
       }
       if (res.type === 'INVENTORY_GATE_BLOCK') {
         notify(res.narrative, 'warn');
@@ -168,9 +198,15 @@ export function GameProvider({ children }) {
         notify(res.systemMessage, 'info');
       }
     } catch (err) {
+      // Remove optimistic message on failure so user can retry cleanly
+      setCampaignState((prev) => ({
+        ...prev,
+        chatLog: (prev.chatLog || []).filter((m) => m.id !== optimisticId),
+      }));
       notify(err.message, 'error');
     } finally {
       setBusy(false);
+      setThinkingStatus(null);
     }
   };
 
@@ -179,7 +215,7 @@ export function GameProvider({ children }) {
     setBusy(true);
     try {
       const res = await apiClient.rewindTurn(campaignState.id, steps);
-      setCampaignState(res.campaignState);
+      setCampaignState({ ...res.campaignState });
       notify(`Rewound to Turn ${res.restoredTurn}.`, 'info');
     } catch (err) {
       notify(err.message, 'error');
@@ -193,8 +229,8 @@ export function GameProvider({ children }) {
     setBusy(true);
     try {
       const res = await apiClient.fastForwardTurn(campaignState.id);
-      setCampaignState(res.campaignState);
-      notify(`Fast-forwarded to Turn ${res.restoredTurn}.`, 'info');
+      setCampaignState({ ...res.campaignState });
+      notify(`Jumped back to Turn ${res.restoredTurn}.`, 'info');
     } catch (err) {
       notify(err.message, 'error');
     } finally {
@@ -209,7 +245,7 @@ export function GameProvider({ children }) {
       const res = await apiClient.exportSave(campaignState.id);
       const driveMsg = res.driveSync?.synced
         ? `Saved to Cloud & Google Drive (${res.driveSync.fileName}).`
-        : 'Saved to Firestore Cloud (connect Google Drive for external backup).';
+        : 'Saved to Cloud.';
       notify(driveMsg, 'success');
     } catch (err) {
       notify(err.message, 'error');
@@ -221,37 +257,45 @@ export function GameProvider({ children }) {
   const generateCharacterPortrait = async (uploadedBase64 = null, inferAppearanceFromImage = false) => {
     if (!campaignState) return;
     setBusy(true);
+    setThinkingStatus('Painting your character portrait...');
     try {
       const res = await apiClient.generatePortrait(campaignState.id, {
         uploadedBase64,
         inferAppearanceFromImage,
       });
       setPendingPortrait(res);
-      notify('Full-body portrait ready for approval.', 'info');
+      notify('Portrait ready for approval.', 'info');
     } catch (err) {
       notify(err.message, 'error');
     } finally {
       setBusy(false);
+      setThinkingStatus(null);
     }
   };
 
   const approvePortraitAndIgnite = async () => {
     if (!campaignState || !pendingPortrait?.portrait?.storagePath) return;
     setBusy(true);
+    setThinkingStatus('Opening your world for the first time...');
     try {
       const approval = await apiClient.advanceSetup(campaignState.id, 'portrait_approval', {
         approved: true,
         portraitRef: pendingPortrait.portrait.storagePath,
         inferredPhysicalTraits: pendingPortrait.inferredPhysicalTraits,
       });
-      const ignited = await apiClient.advanceSetup(campaignState.id, 'world_ignition', {});
-      setCampaignState(ignited.campaignState || approval.campaignState);
+      const ignited = await apiClient.advanceSetup(campaignState.id, 'world_ignition', {
+        model: selectedModel,
+        thinkingLevel,
+      });
+      setCampaignState({ ...(ignited.campaignState || approval.campaignState) });
       setPendingPortrait(null);
-      notify('Portrait approved. World ignited!', 'success');
+      await refreshCatalogAndCampaigns();
+      notify('Welcome to your world!', 'success');
     } catch (err) {
       notify(err.message, 'error');
     } finally {
       setBusy(false);
+      setThinkingStatus(null);
     }
   };
 
@@ -264,6 +308,7 @@ export function GameProvider({ children }) {
     thinkingLevel,
     setThinkingLevel,
     campaigns,
+    draftCampaign,
     campaignState,
     setCampaignState,
     pendingPortrait,
@@ -272,17 +317,23 @@ export function GameProvider({ children }) {
     setLightboxImage,
     oocDrawerOpen,
     setOocDrawerOpen,
+    byokModalOpen,
+    setByokModalOpen,
+    navMenuOpen,
+    setNavMenuOpen,
     busy,
+    thinkingStatus,
+    setThinkingStatus,
     statusToast,
     notify,
     handleGoogleSignIn,
-    byokModalOpen,
-    setByokModalOpen,
-    saveByokKey,
     handleConnectAIProvider,
+    saveByokKey,
     handleSignOut,
+    returnToMainMenu,
     startNewCampaign,
     loadCampaign,
+    deleteCampaign,
     submitTurn,
     rewind,
     fastForward,

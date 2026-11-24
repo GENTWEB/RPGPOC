@@ -15,6 +15,23 @@ const { decryptToken, callNarratorLLM, callNarratorLLMWithThinking } = require('
 
 const router = express.Router();
 
+async function withHerokuKeepAlive(res, asyncWork) {
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.flushHeaders();
+  const timer = setInterval(() => {
+    try { res.write(" "); } catch (_) {}
+  }, 5000);
+  try {
+    const payload = await asyncWork();
+    clearInterval(timer);
+    return res.end(JSON.stringify(payload));
+  } catch (err) {
+    clearInterval(timer);
+    return res.end(JSON.stringify({ error: err.message }));
+  }
+}
+
+
 function getCampaignRef(uid, campaignId) {
   return getDb().collection('users').doc(uid).collection('campaigns').doc(campaignId);
 }
@@ -129,19 +146,17 @@ router.delete('/:campaignId', async (req, res) => {
 });
 
 router.post('/:campaignId/setup/chat', async (req, res) => {
-  try {
+  return withHerokuKeepAlive(res, async () => {
     const ref = getCampaignRef(req.user.uid, req.params.campaignId);
     const doc = await ref.get();
-    if (!doc.exists) return res.status(404).json({ error: 'Story not found.' });
+    if (!doc.exists) throw new Error("Story not found.");
 
     const state = doc.data();
     const message = String(req.body?.message || '').trim();
-    if (!message) return res.status(400).json({ error: 'Message is required.' });
+    if (!message) throw new Error("Message is required.");
 
     const creds = await getUserLlmCreds(req.user.uid, req.body);
-    if (!creds.accessToken) {
-      return res.status(400).json({ error: 'Connect your AI key first (top bar -> Connect AI).' });
-    }
+    if (!creds.accessToken) throw new Error("Connect your AI key first (top bar -> Connect AI).");
 
     const recentChat = (state.chatLog || [])
       .slice(-10)
@@ -177,10 +192,8 @@ ${message}`;
     state.metaData.timestamp = now;
 
     await ref.set(state);
-    return res.json({ reply, thinking, campaignState: state });
-  } catch (err) {
-    return res.status(500).json({ error: err.message });
-  }
+    return { reply, thinking, campaignState: state };
+  });
 });
 
 router.post('/:campaignId/setup/sjt/generate', async (req, res) => {

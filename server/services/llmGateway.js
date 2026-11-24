@@ -140,7 +140,7 @@ async function fetchWithTimeoutAndRetry(url, options, maxRetries = 1) {
   let resp;
   for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 21000);
+    const timer = setTimeout(() => controller.abort(), 120000);
     try {
       resp = await fetch(url, { ...options, signal: controller.signal });
     } finally {

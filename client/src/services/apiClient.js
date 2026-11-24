@@ -23,7 +23,7 @@ async function request(path, options = {}) {
   });
 
   const data = await resp.json().catch(() => ({}));
-  if (!resp.ok) {
+  if (!resp.ok || data.error) {
     throw new Error(data.error || data.message || `Request failed (${resp.status})`);
   }
   return data;
@@ -46,6 +46,7 @@ export const apiClient = {
   createCampaign: (rulesetMode = 'CLASSIC_D20') =>
     request('/campaigns', { method: 'POST', body: JSON.stringify({ rulesetMode }) }),
   getCampaign: (campaignId) => request(`/campaigns/${campaignId}`),
+  deleteCampaign: (campaignId) => request(`/campaigns/${campaignId}`, { method: 'DELETE' }),
   getArchetypes: () => request('/campaigns/archetypes'),
   getSjtScenarios: () => request('/campaigns/sjt-scenarios'),
   setupChat: (campaignId, payload) =>

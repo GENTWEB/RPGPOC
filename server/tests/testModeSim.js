@@ -75,7 +75,7 @@ async function runSimulation() {
       narratorStyle: 'William Gibson meets Raymond Chandler',
       axxRating: 4,
       axx4Confirmed: true,
-      scaryRating: 3,
+      scaryRating: 3, scary3Confirmed: true,
       dateTime: '2050-09-20 04:04',
       playerCount: 1,
       rulesetMode: RULESET_MODES.CLASSIC_D20,
