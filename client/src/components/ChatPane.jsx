@@ -60,6 +60,9 @@ export default function ChatPane() {
     busy,
     thinkingStatus,
     setThinkingStatus,
+    cooldownSeconds,
+    cancelActiveCall,
+    runResilientLlmCall,
     selectedModel,
     thinkingLevel,
     involvementLevel,
@@ -152,12 +155,14 @@ export default function ChatPane() {
     if (!setupForm.settingDescription.trim()) return;
     setThinkingStatus('Game Master is brainstorming your world...');
     try {
-      const res = await apiClient.setupChat(campaignState.id, {
-        message: setupForm.settingDescription || (involvementLevel === 3 ? "Help me pick a world using quick choices!" : ""),
-        involvementLevel,
-        model: selectedModel,
-        thinkingLevel,
-      });
+      const res = await runResilientLlmCall("Game Master is brainstorming your world...", (modelToUse) =>
+        apiClient.setupChat(campaignState.id, {
+          message: setupForm.settingDescription || (involvementLevel === 3 ? "Help me pick a world using quick choices!" : ""),
+          involvementLevel,
+          model: modelToUse,
+          thinkingLevel,
+        })
+      );
       setCampaignState({ ...res.campaignState });
     } catch (err) {
       notify(err.message, 'error');
@@ -170,13 +175,15 @@ export default function ChatPane() {
     setSjtLoading(true);
     setThinkingStatus('Crafting scenarios for your world...');
     try {
-      const res = await apiClient.generateThemedSjt(campaignState.id, {
-        stage: sjtScenarios.length === 0 ? 'foundation' : 'adaptive',
-        count: 5,
-        previousAnswers: sjtAnswers,
-        model: selectedModel,
-        thinkingLevel,
-      });
+      const res = await runResilientLlmCall("Crafting scenarios for your world...", (modelToUse) =>
+        apiClient.generateThemedSjt(campaignState.id, {
+          stage: sjtScenarios.length === 0 ? "foundation" : "adaptive",
+          count: 5,
+          previousAnswers: sjtAnswers,
+          model: modelToUse,
+          thinkingLevel,
+        })
+      );
       setSjtScenarios(res.scenarios || []);
       setSjtAnswers([]);
       notify('Custom scenarios ready!', 'success');
@@ -717,6 +724,12 @@ export default function ChatPane() {
             <div className="inline-flex items-center gap-2.5 px-4 py-2.5 rounded-2xl bg-[#161d26] border border-teal-500/40 text-xs text-teal-200">
               <Loader2 className="w-4 h-4 animate-spin text-teal-400" />
               <span>{thinkingStatus}</span>
+              <button
+                onClick={cancelActiveCall}
+                className="ml-2 px-2 py-0.5 rounded bg-[#0f1419] border border-slate-700 hover:border-red-400 text-[10px] text-slate-300"
+              >
+                Cancel
+              </button>
             </div>
           </div>
         )}
@@ -724,6 +737,13 @@ export default function ChatPane() {
         <div ref={bottomRef} />
       </div>
 
+      {cooldownSeconds > 0 && (
+        <div className="px-4 py-2 bg-red-950/70 border-t border-red-500/40 text-xs text-red-200 flex items-center justify-between">
+          <span>
+            Free models are currently overloaded. Switch to a paid model in the GM menu, or retry in <strong>{cooldownSeconds}s</strong>.
+          </span>
+        </div>
+      )}
       <ComposerBar
         onUploadImage={(base64) => {
           if (step === 'portrait_approval') {

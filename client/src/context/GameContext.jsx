@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
+import { runWithRetryAndFallback } from '../services/resilientCall';
 import { subscribeAuth, signInWithGoogleDrive, logoutUser } from '../services/firebaseClient';
 import { apiClient } from '../services/apiClient';
 
@@ -14,7 +15,8 @@ export function GameProvider({ children }) {
     models: [],
   });
   const [selectedModel, setSelectedModel] = useState('gemini-3.8-flash');
-  const [thinkingLevel, setThinkingLevel] = useState('Mid');
+  const [thinkingLevel, setThinkingLevelState] = useState(() => localStorage.getItem('dl_thinking_level') || 'Max');
+  const setThinkingLevel = (lvl) => { localStorage.setItem('dl_thinking_level', lvl); setThinkingLevelState(lvl); };
   const [involvementLevel, setInvolvementLevel] = useState(1);
   const [artTarget, setArtTarget] = useState("nano_banana_web");
   const [useImages, setUseImages] = useState(true);
@@ -28,7 +30,55 @@ export function GameProvider({ children }) {
   const [navMenuOpen, setNavMenuOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [thinkingStatus, setThinkingStatus] = useState(null);
+  const [cooldownSeconds, setCooldownSeconds] = useState(0);
+  const cancelRef = useRef(false);
   const [statusToast, setStatusToast] = useState(null);
+
+  
+  useEffect(() => {
+    if (cooldownSeconds <= 0) return undefined;
+    const t = setTimeout(() => setCooldownSeconds((s) => Math.max(0, s - 1)), 1000);
+    return () => clearTimeout(t);
+  }, [cooldownSeconds]);
+
+  const cancelActiveCall = () => {
+    cancelRef.current = true;
+    setThinkingStatus(null);
+    setBusy(false);
+  };
+
+  const resolveFallbackModel = () => {
+    const models = providerStatus.models || [];
+    const match = models.find((m) => /3.5.*flash-lite/i.test(m.id)) || models.find((m) => /flash-lite/i.test(m.id));
+    return match ? match.id : "gemini-3.5-flash-lite";
+  };
+
+  const runResilientLlmCall = async (initialStatus, invokeWithModel) => {
+    cancelRef.current = false;
+    const models = providerStatus.models || [];
+    const primaryObj = models.find((m) => m.id === selectedModel);
+    try {
+      const out = await runWithRetryAndFallback({
+        primaryModel: selectedModel,
+        primaryLabel: primaryObj?.name || selectedModel,
+        fallbackModel: resolveFallbackModel(),
+        fallbackLabel: "Gemini 3.5 Flash-Lite",
+        initialStatus,
+        invoke: invokeWithModel,
+        onStatus: setThinkingStatus,
+        cancelRef,
+      });
+      if (out.fellBack) {
+        notify(`Completed via fallback (${out.usedModel}).`, "info");
+      }
+      return out.result;
+    } catch (err) {
+      if (err.exhausted && err.cooldownSeconds) {
+        setCooldownSeconds(err.cooldownSeconds);
+      }
+      throw err;
+    }
+  };
 
   const notify = useCallback((message, tone = 'info') => {
     setStatusToast({ message, tone, id: Date.now() });
@@ -181,19 +231,23 @@ export function GameProvider({ children }) {
     setThinkingStatus(isSetupMode ? 'Co-creating your world...' : 'Game Master is weaving the next scene...');
 
     try {
-      const res = isSetupMode
-        ? await apiClient.setupChat(campaignState.id, {
-            message: userInput,
-            involvementLevel,
-            model: selectedModel,
-            thinkingLevel,
-          })
-        : await apiClient.sendTurn(campaignState.id, {
-            userInput,
-            tacticalAction,
-            model: selectedModel,
-            thinkingLevel,
-          });
+      const res = await runResilientLlmCall(
+        isSetupMode ? "Co-creating your world..." : "Game Master is weaving the next scene...",
+        (modelToUse) =>
+          isSetupMode
+            ? apiClient.setupChat(campaignState.id, {
+                message: userInput,
+                involvementLevel,
+                model: modelToUse,
+                thinkingLevel,
+              })
+            : apiClient.sendTurn(campaignState.id, {
+                userInput,
+                tacticalAction,
+                model: modelToUse,
+                thinkingLevel,
+              })
+      );
       if (res.campaignState) {
         setCampaignState({ ...res.campaignState });
       }
@@ -345,6 +399,9 @@ export function GameProvider({ children }) {
     busy,
     thinkingStatus,
     setThinkingStatus,
+    cooldownSeconds,
+    cancelActiveCall,
+    runResilientLlmCall,
     statusToast,
     notify,
     handleGoogleSignIn,

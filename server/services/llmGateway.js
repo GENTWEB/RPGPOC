@@ -136,7 +136,7 @@ function stripThoughtLeaks(rawText) {
   return { text: text.trim(), extractedThought: extractedThought.trim() };
 }
 
-async function fetchWithTimeoutAndRetry(url, options, maxRetries = 1) {
+async function fetchWithTimeoutAndRetry(url, options, maxRetries = 0) {
   let resp;
   for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
     const controller = new AbortController();
