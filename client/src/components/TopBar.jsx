@@ -367,7 +367,7 @@ export default function TopBar({ inspectorActive = false, onToggleInspector = ()
                   >
                     {(providerStatus.models || []).map((m) => (
                       <option key={m.id} value={m.id}>
-                        {m.name} ({m.free ? "Free" : "Paid"})
+                        {m.name} ({m.free || m.tier === "free" || /gemma|flash-lite/i.test(m.id) ? "Free" : "Paid"})
                       </option>
                     ))}
                   </select>

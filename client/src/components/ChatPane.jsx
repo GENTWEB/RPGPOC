@@ -1,3 +1,4 @@
+import { getShuffledPitches, DEFAULT_STEP3_EXAMPLES, SETTING_HELP_MODALS } from "../data/setupExamples";
 import React, { useEffect, useRef, useState } from 'react';
 import {
   PlusCircle,
@@ -17,12 +18,7 @@ import RollBadge from './RollBadge';
 import PortraitApprovalCard from './PortraitApprovalCard';
 import ComposerBar from './ComposerBar';
 
-const EXAMPLE_PITCHES = [
-  'Highlander immortals + Bartimaeus Djinn magic set in the rain-soaked neon noir of Blade Runner 2049, balancing laser pistols, bound spirits, and old steel.',
-  'Harry Potter wizarding mystery meets Project Hail Mary orbital survival, with the cozy secret-society whimsy of Mr. Penumbra’s 24-Hour Bookstore.',
-  'A classic tabletop fantasy adventure: a frontier tavern, a missing caravan, ancient dwarven ruins, and rumors of a waking dragon.',
-  'A gritty 1940s jazz-club detective noir where nobody tells the truth and a single stolen photograph could bring down the whole city.',
-];
+const EXAMPLE_PITCHES = getShuffledPitches();
 
 function renderFormattedText(text) {
   const lines = String(text || '').split('\n');
@@ -97,6 +93,29 @@ export default function ChatPane({ onOpenTutorial = () => {} } = {}) {
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [expandedThoughts, setExpandedThoughts] = useState({});
   const [pitchIdx, setPitchIdx] = useState(0);
+  const [helpModalKey, setHelpModalKey] = useState(null);
+  const [autoFilledFields, setAutoFilledFields] = useState({});
+
+  const step3Hints = campaignState?.globalState?.step3Hints || null;
+  const step3Examples = {
+    techLevel: step3Hints?.examples?.techLevel?.length ? step3Hints.examples.techLevel : DEFAULT_STEP3_EXAMPLES.techLevel,
+    narratorStyle: step3Hints?.examples?.narratorStyle?.length ? step3Hints.examples.narratorStyle : DEFAULT_STEP3_EXAMPLES.narratorStyle,
+    dateTime: step3Hints?.examples?.dateTime?.length ? step3Hints.examples.dateTime : DEFAULT_STEP3_EXAMPLES.dateTime,
+  };
+
+  useEffect(() => {
+    const pf = campaignState?.globalState?.step3Hints?.prefill;
+    if (!pf) return;
+    setSetupForm((prev) => {
+      const next = { ...prev };
+      const filled = {};
+      if (!prev.techLevel && pf.techLevel) { next.techLevel = pf.techLevel; filled.techLevel = true; }
+      if (!prev.narratorStyle && pf.narratorStyle) { next.narratorStyle = pf.narratorStyle; filled.narratorStyle = true; }
+      if (!prev.dateTime && pf.dateTime) { next.dateTime = pf.dateTime; filled.dateTime = true; }
+      if (Object.keys(filled).length > 0) setAutoFilledFields((old) => ({ ...old, ...filled }));
+      return next;
+    });
+  }, [campaignState?.globalState?.step3Hints]);
   useEffect(() => {
     const preset = localStorage.getItem("dl_preset_pitch");
     if (preset && campaignState?.narratorState?.currentStep === "setting") {
@@ -440,29 +459,60 @@ export default function ChatPane({ onOpenTutorial = () => {} } = {}) {
 
         {isSetup && step === 'parameters' && (
           <div className="rounded-xl bg-[#161d26] border border-slate-700 p-5 space-y-3">
-            <div className="text-xs font-semibold text-amber-400 uppercase tracking-wider">Step 3 · World Tone &amp; Vibe</div>
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-xs font-semibold text-amber-400 uppercase tracking-wider">Step 3 · World Tone &amp; Vibe</div>
+              <span className="text-[10px] font-mono text-slate-400">Press ` in any blank box to use the example</span>
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-              <label className="space-y-1">
-                <span className="text-slate-400">Tech &amp; Magic Level</span>
-                <input
-                  placeholder="e.g., Orbital sci-fi + secret wandcraft"
-                  value={setupForm.techLevel}
-                  onChange={(e) => setSetupForm({ ...setupForm, techLevel: e.target.value })}
-                  className="w-full rounded bg-[#0f1419] border border-slate-700 px-2.5 py-1.5 text-slate-100"
-                />
-              </label>
-              <label className="space-y-1">
-                <span className="text-slate-400">Storytelling Style (Book / Movie / Show)</span>
-                <input
-                  placeholder="e.g., Andy Weir meets Neil Gaiman"
-                  value={setupForm.narratorStyle}
-                  onChange={(e) => setSetupForm({ ...setupForm, narratorStyle: e.target.value })}
-                  className="w-full rounded bg-[#0f1419] border border-slate-700 px-2.5 py-1.5 text-slate-100"
-                />
-              </label>
+              {[
+                { key: "techLevel", label: "Tech & Magic Level" },
+                { key: "narratorStyle", label: "Storytelling Style (Book / Movie / Show)" },
+              ].map(({ key, label }) => {
+                const exList = step3Examples[key];
+                const curEx = exList[pitchIdx % exList.length];
+                return (
+                  <label key={key} className="space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-slate-400">{label}</span>
+                      {autoFilledFields[key] ? (
+                        <span className="text-[10px] font-mono text-teal-300">Auto-filled</span>
+                      ) : !setupForm[key] ? (
+                        <button
+                          type="button"
+                          onClick={() => setSetupForm((p) => ({ ...p, [key]: curEx }))}
+                          className="text-[10px] font-mono text-amber-400 hover:underline"
+                        >
+                          Use example
+                        </button>
+                      ) : null}
+                    </div>
+                    <input
+                      placeholder={`Press \` to use: "${curEx}"`}
+                      value={setupForm[key]}
+                      onKeyDown={(e) => {
+                        if (e.key === "`" && !setupForm[key].trim()) {
+                          e.preventDefault();
+                          setSetupForm((p) => ({ ...p, [key]: curEx }));
+                        }
+                      }}
+                      onChange={(e) => setSetupForm({ ...setupForm, [key]: e.target.value })}
+                      className="w-full rounded bg-[#0f1419] border border-slate-700 px-2.5 py-1.5 text-slate-100"
+                    />
+                  </label>
+                );
+              })}
+
               <div className="space-y-1">
                 <div className="flex items-center justify-between">
-                  <span className="text-slate-400">Play Style</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-slate-400">Play Style</span>
+                    <button
+                      type="button"
+                      onClick={() => setHelpModalKey("rulesetMode")}
+                      className="w-4 h-4 rounded-full bg-slate-800 border border-slate-600 text-[10px] font-mono text-teal-300 hover:border-teal-400 inline-flex items-center justify-center"
+                      title="Explain Play Style options"
+                    >?</button>
+                  </div>
                   <button
                     type="button"
                     onClick={() => setEditingRuleset(!editingRuleset)}
@@ -486,17 +536,52 @@ export default function ChatPane({ onOpenTutorial = () => {} } = {}) {
                   </div>
                 )}
               </div>
+
+              {(() => {
+                const exList = step3Examples.dateTime;
+                const curEx = exList[pitchIdx % exList.length];
+                return (
+                  <label className="space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-slate-400">Starting Era / Approximate Time</span>
+                      {autoFilledFields.dateTime ? (
+                        <span className="text-[10px] font-mono text-teal-300">Auto-filled</span>
+                      ) : !setupForm.dateTime ? (
+                        <button
+                          type="button"
+                          onClick={() => setSetupForm((p) => ({ ...p, dateTime: curEx }))}
+                          className="text-[10px] font-mono text-amber-400 hover:underline"
+                        >
+                          Use example
+                        </button>
+                      ) : null}
+                    </div>
+                    <input
+                      placeholder={`Press \` to use: "${curEx}"`}
+                      value={setupForm.dateTime}
+                      onKeyDown={(e) => {
+                        if (e.key === "`" && !setupForm.dateTime.trim()) {
+                          e.preventDefault();
+                          setSetupForm((p) => ({ ...p, dateTime: curEx }));
+                        }
+                      }}
+                      onChange={(e) => setSetupForm({ ...setupForm, dateTime: e.target.value })}
+                      className="w-full rounded bg-[#0f1419] border border-slate-700 px-2.5 py-1.5 text-slate-100"
+                    />
+                  </label>
+                );
+              })()}
+
               <label className="space-y-1">
-                <span className="text-slate-400">Starting Era / Approximate Time</span>
-                <input
-                  placeholder="e.g., Late autumn 2042, or leave blank"
-                  value={setupForm.dateTime}
-                  onChange={(e) => setSetupForm({ ...setupForm, dateTime: e.target.value })}
-                  className="w-full rounded bg-[#0f1419] border border-slate-700 px-2.5 py-1.5 text-slate-100"
-                />
-              </label>
-              <label className="space-y-1">
-                <span className="text-slate-400">Mature Themes Intensity (0–4)</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-slate-400">Mature Themes Intensity (0–4)</span>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.preventDefault(); setHelpModalKey("axxRating"); }}
+                    className="w-4 h-4 rounded-full bg-slate-800 border border-slate-600 text-[10px] font-mono text-teal-300 hover:border-teal-400 inline-flex items-center justify-center"
+                    title="Explain Mature Themes levels 0–4"
+                  >?</button>
+                </div>
                 <input
                   type="number"
                   min={0}
@@ -506,8 +591,17 @@ export default function ChatPane({ onOpenTutorial = () => {} } = {}) {
                   className="w-full rounded bg-[#0f1419] border border-slate-700 px-2.5 py-1.5 text-slate-100"
                 />
               </label>
+
               <label className="space-y-1">
-                <span className="text-slate-400">Horror &amp; Suspense Level (0–3)</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-slate-400">Horror &amp; Suspense Level (0–3)</span>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.preventDefault(); setHelpModalKey("scaryRating"); }}
+                    className="w-4 h-4 rounded-full bg-slate-800 border border-slate-600 text-[10px] font-mono text-teal-300 hover:border-teal-400 inline-flex items-center justify-center"
+                    title="Explain Horror & Suspense levels 0–3"
+                  >?</button>
+                </div>
                 <input
                   type="number"
                   min={0}
@@ -518,6 +612,38 @@ export default function ChatPane({ onOpenTutorial = () => {} } = {}) {
                 />
               </label>
             </div>
+
+            {helpModalKey && SETTING_HELP_MODALS[helpModalKey] && (
+              <div
+                className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4"
+                onClick={() => setHelpModalKey(null)}
+              >
+                <div
+                  className="w-full max-w-md rounded-2xl bg-[#161d26] border border-slate-700 p-5 space-y-3 shadow-2xl"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-semibold text-amber-400">{SETTING_HELP_MODALS[helpModalKey].title}</h3>
+                      <p className="text-xs text-slate-400 mt-0.5">{SETTING_HELP_MODALS[helpModalKey].subtitle}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setHelpModalKey(null)}
+                      className="px-2 py-0.5 rounded bg-slate-800 text-xs text-slate-300 hover:text-white"
+                    >✕</button>
+                  </div>
+                  <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
+                    {SETTING_HELP_MODALS[helpModalKey].levels.map((lvl) => (
+                      <div key={lvl.label} className="p-2.5 rounded-lg bg-[#0f1419] border border-slate-800">
+                        <div className="text-xs font-semibold text-teal-300">{lvl.label}</div>
+                        <div className="text-xs text-slate-300 mt-0.5 leading-relaxed">{lvl.desc}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
             {setupForm.axxRating === 4 && (
               <label className="flex items-center gap-2 p-2.5 rounded bg-red-950/50 border border-red-500/40 text-xs text-red-200">
                 <input

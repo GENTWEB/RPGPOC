@@ -183,7 +183,10 @@ router.post('/:campaignId/setup/chat', async (req, res) => {
 ${modeRule}
 HARD RULES:
 - NEVER output planning notes, scratchpad outlines, or word counts—write ONLY your direct reply to the player.
-- NEVER invent a separate character-building quiz during world setup—the app has its own dedicated Character Creation step right after "Lock World & Continue".`;
+- NEVER invent a separate character-building quiz during world setup—the app has its own dedicated Character Creation step right after "Lock World & Continue".
+- At the VERY END of your response (after any @CHOICES line), append a single-line hidden metadata block in this exact format:
+  <<<STEP3_HINTS>>>{"prefill":{"techLevel":"","narratorStyle":"","dateTime":""},"examples":{"techLevel":["idea 1","idea 2","idea 3"],"narratorStyle":["idea 1","idea 2","idea 3"],"dateTime":["idea 1","idea 2","idea 3"]}}<<<END_HINTS>>>
+  Rules: In "prefill", ONLY fill a field if the player ALREADY explicitly specified it (otherwise leave ""). In "examples", write 3 bespoke ideas per field tailored strictly to this exact world.`;
 
     const userPrompt = `CURRENT WORLD IDEA: ${state.globalState?.settingDescription || '(just starting)'}
 CONVERSATION SO FAR:
@@ -202,12 +205,23 @@ ${message}`;
     state.chatLog = state.chatLog || [];
     state.chatLog.push({ id: `su_${Date.now()}`, role: 'player', text: message, timestamp: now });
     let cleanReply = reply;
+    const hintMatch = cleanReply.match(/<<<STEP3_HINTS>>>([\s\S]*?)<<<END_HINTS>>>/i);
+    if (hintMatch) {
+      cleanReply = cleanReply.replace(/<<<STEP3_HINTS>>>[\s\S]*?<<<END_HINTS>>>/gi, "").trim();
+      try {
+        const parsedHints = JSON.parse(hintMatch[1].trim());
+        if (parsedHints && typeof parsedHints === "object") {
+          state.globalState.step3Hints = parsedHints;
+        }
+      } catch (_) {}
+    }
     let choices = [];
-    const choiceMatch = reply.match(/@CHOICES:\s*(.+)$/im);
+    const choiceMatch = cleanReply.match(/@CHOICES:\s*(.+)$/im);
     if (choiceMatch) {
       choices = choiceMatch[1].split("|").map((s) => s.trim()).filter(Boolean).slice(0, 5);
-      cleanReply = reply.replace(/@CHOICES:\s*.+$/im, "").trim();
+      cleanReply = cleanReply.replace(/@CHOICES:\s*.+$/im, "").trim();
     }
+    cleanReply = cleanReply.replace(/\s*\u2014\s*/g, " - ");
     state.chatLog.push({ id: `sn_${Date.now() + 1}`, role: "narrator", text: cleanReply, choices, thinking: thinking || null, timestamp: now });
 
     if (!state.globalState.settingDescription) {
