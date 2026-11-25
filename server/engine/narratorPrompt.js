@@ -52,8 +52,14 @@ You MUST output exactly two sections separated by ---TOON_META--- and ---NARRATI
   (rows if any, e.g. hero,-8)
 @INV_DELTA[N]{id,op,name,slots}:
   (rows if any, e.g. hero,ADD,"Disarmed Blasting Cap",0)
+@NPC_MEET[N]{id,name,role,disposition}:
+  (rows ONLY when player meets a new named NPC, e.g. eugene,"Eugene Krabs","Syndicate Boss",neutral)
 @NPC_XP[N]{id,delta,reason}:
   (rows if any: Routine +1-5, Banter +10-15, Catalyst +30-50)
+@GRID_MOVE[N]{id,x,y,kind}:
+  (rows during combat/standoffs to position NPCs/enemies on 0-8 grid, e.g. eugene,6,2,enemy)
+@ACTION_COST action:"none"|movePenaltyPct:0|reason:""
+  (estimate narrative effort penalty 0-70%: dialogue=0, inspect/search=30, medical/disarm=40, heavy carry=50)
 @GENES_UNLOCK[N]{id,tier,json}:
   (rows if server signals Tier II or Tier I unlock)
 @TELEMETRY blindReadXYZ:"X,Y,Z"|kineticSpike:false|stressDelta:0

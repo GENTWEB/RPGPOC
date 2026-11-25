@@ -273,6 +273,85 @@ async function processTurn({
     }
   }
 
+  // Auto-register newly met NPCs so Squad populates live
+  for (const met of meta.npcMeets || []) {
+    const cleanId = String(met.id || met.name || "").trim().toLowerCase().replace(/[^a-z0-9_]+/g, "_");
+    if (!cleanId) continue;
+    const exists = workingState.activeEntities.activeNPCs.some(
+      (n) => n.id === cleanId || String(n.name || "").toLowerCase() === String(met.name || "").toLowerCase()
+    );
+    if (!exists) {
+      workingState.activeEntities.activeNPCs.push({
+        id: cleanId,
+        name: met.name || met.id,
+        role: met.role || "Character",
+        disposition: met.disposition || "neutral",
+        currentTier: 3,
+        relationalXP: 5,
+        permanenceUnlocked: false,
+        genetics: {
+          tier_2_relational: {
+            STATUS: "ACTIVE",
+            currentGoal: met.role || "Unknown motive",
+          },
+        },
+      });
+    }
+  }
+
+  // Ensure combatState.grid exists & apply GM-driven @GRID_MOVE tokens
+  workingState.worldState = workingState.worldState || {};
+  workingState.worldState.combatState = workingState.worldState.combatState || {
+    active: false,
+    round: 1,
+    grid: { width: 9, height: 9, coverCells: [], tokens: [] },
+  };
+  workingState.worldState.combatState.grid = workingState.worldState.combatState.grid || {
+    width: 9, height: 9, coverCells: [], tokens: [],
+  };
+  if ((meta.gridMoves || []).length > 0) {
+    const grid = workingState.worldState.combatState.grid;
+    grid.tokens = grid.tokens || [];
+    for (const mv of meta.gridMoves) {
+      const npcMatch = workingState.activeEntities.activeNPCs.find((n) => n.id === mv.id);
+      const displayName = npcMatch?.name || mv.id;
+      const existing = grid.tokens.find((t) => t.id === mv.id);
+      const kind = /enemy|hostile/i.test(mv.kind) ? "enemy" : /pc|player/i.test(mv.kind) ? "pc" : "ally";
+      if (existing) {
+        existing.x = mv.x;
+        existing.y = mv.y;
+        existing.kind = kind;
+      } else {
+        grid.tokens.push({
+          id: mv.id,
+          name: displayName,
+          label: displayName.slice(0, 2).toUpperCase(),
+          kind,
+          x: mv.x,
+          y: mv.y,
+        });
+      }
+    }
+  }
+
+  // Compute live Deep Realism / Encumbrance movement tile budget from @ACTION_COST
+  const baseTiles = 5;
+  const narrativePct = Math.min(70, Math.max(0, Number(meta.actionCost?.movePenaltyPct) || 0));
+  const encPct = pc?.combatStats?.encumbrancePenalty ? 30 : 0;
+  const combinedPct = Math.min(80, narrativePct + encPct);
+  const maxTiles = Math.max(1, Math.round(baseTiles * (1 - combinedPct / 100)));
+  const reasons = [];
+  if (narrativePct > 0 && meta.actionCost?.reason) reasons.push(`${meta.actionCost.reason} (-${narrativePct}%)`);
+  else if (narrativePct > 0) reasons.push(`${meta.actionCost?.action || "Narrative action"} (-${narrativePct}%)`);
+  if (encPct > 0) reasons.push("Encumbered (-30%)");
+  workingState.worldState.combatState.movementBudget = {
+    baseTiles,
+    maxTiles,
+    penaltyPct: combinedPct,
+    action: meta.actionCost?.action || "none",
+    reason: reasons.join(" · "),
+  };
+
   const asyncPortraitPromises = [];
   const nozzleRes = applyRelationalXpDeltas(workingState.activeEntities.activeNPCs, meta.npcXp, {
     onTriggerAsyncPortrait: (npc) => {

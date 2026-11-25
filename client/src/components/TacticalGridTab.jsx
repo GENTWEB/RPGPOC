@@ -27,7 +27,7 @@ function pickShapeForCell(x, y, coverType, explicitShape) {
 }
 
 function generateDemoTerrain(width, height) {
-  const spots = [
+  return [
     { x: 2, y: 2, shape: 'l_wall', type: 'full' },
     { x: 5, y: 2, shape: 'crates', type: 'half' },
     { x: 7, y: 3, shape: 'pillar', type: 'full' },
@@ -39,7 +39,6 @@ function generateDemoTerrain(width, height) {
     { x: 5, y: 7, shape: 'console', type: 'half' },
     { x: 2, y: 7, shape: 'archway', type: 'full' },
   ].filter((c) => c.x < width && c.y < height);
-  return spots;
 }
 
 export default function TacticalGridTab() {
@@ -55,6 +54,13 @@ export default function TacticalGridTab() {
   const [localTokenPositions, setLocalTokenPositions] = useState({});
   const [selectedTokenId, setSelectedTokenId] = useState(null);
   const [inspectedCell, setInspectedCell] = useState(null);
+
+  const moveBudget = combat?.movementBudget || {
+    baseTiles: 5,
+    maxTiles: pc?.combatStats?.encumbrancePenalty ? 3 : 5,
+    penaltyPct: pc?.combatStats?.encumbrancePenalty ? 30 : 0,
+    reason: pc?.combatStats?.encumbrancePenalty ? 'Encumbered (-30%)' : '',
+  };
 
   const coverCells = useMemo(() => {
     if ((rawGrid.coverCells || []).length > 0 && !demoMode) return rawGrid.coverCells;
@@ -109,14 +115,26 @@ export default function TacticalGridTab() {
   const handleCellClick = (x, y, cover, token) => {
     setInspectedCell({ x, y, cover, token });
     if (token) {
-      setSelectedTokenId((prev) => (prev === token.id ? null : token.id));
+      if (token.kind === 'pc') {
+        setSelectedTokenId((prev) => (prev === token.id ? null : token.id));
+      } else {
+        setSelectedTokenId(null);
+      }
       return;
     }
     if (selectedTokenId && !cover) {
-      setLocalTokenPositions((prev) => ({ ...prev, [selectedTokenId]: { x, y } }));
-      setSelectedTokenId(null);
+      const origin = baseTokens.find((t) => t.id === selectedTokenId);
+      const curPos = origin ? (localTokenPositions[selectedTokenId] || { x: origin.x, y: origin.y }) : null;
+      const dist = curPos ? Math.abs(x - curPos.x) + Math.abs(y - curPos.y) : 0;
+      if (dist <= moveBudget.maxTiles) {
+        setLocalTokenPositions((prev) => ({ ...prev, [selectedTokenId]: { x, y } }));
+        setSelectedTokenId(null);
+      }
     }
   };
+
+  const selectedOrigin = selectedTokenId ? baseTokens.find((t) => t.id === selectedTokenId) : null;
+  const selectedPos = selectedOrigin ? (localTokenPositions[selectedTokenId] || { x: selectedOrigin.x, y: selectedOrigin.y }) : null;
 
   const cells = [];
   for (let y = 0; y < height; y += 1) {
@@ -147,7 +165,7 @@ export default function TacticalGridTab() {
             <button
               onClick={() => { setLocalTokenPositions({}); setSelectedTokenId(null); }}
               className="p-1 rounded bg-[#0f1419] border border-slate-700 text-slate-400 hover:text-white"
-              title="Reset moved tokens"
+              title="Reset moved token"
             >
               <RotateCcw className="w-3 h-3" />
             </button>
@@ -170,7 +188,6 @@ export default function TacticalGridTab() {
         </div>
       )}
 
-      {/* Interactive CSS Tactical Grid */}
       <div
         className="grid gap-1 p-2 rounded-xl bg-[#0a0f14] border border-slate-800 select-none"
         style={{ gridTemplateColumns: `repeat(${width}, minmax(0, 1fr))` }}
@@ -179,7 +196,8 @@ export default function TacticalGridTab() {
           const isFull = cell.cover?.shape?.cover === 'full';
           const isHalf = cell.cover?.shape?.cover === 'half';
           const isSelected = cell.token && cell.token.id === selectedTokenId;
-          const canMoveHere = Boolean(selectedTokenId && !cell.token && !cell.cover);
+          const dist = selectedPos ? Math.abs(cell.x - selectedPos.x) + Math.abs(cell.y - selectedPos.y) : 999;
+          const canMoveHere = Boolean(selectedTokenId && !cell.token && !cell.cover && dist <= moveBudget.maxTiles);
 
           return (
             <button
@@ -188,7 +206,7 @@ export default function TacticalGridTab() {
               onClick={() => handleCellClick(cell.x, cell.y, cell.cover, cell.token)}
               title={
                 cell.token
-                  ? `${cell.token.name} (${cell.x},${cell.y}) - Click to select/move`
+                  ? `${cell.token.name} (${cell.x},${cell.y})${cell.token.kind === 'pc' ? ' - Tap to move' : ' - GM controlled'}`
                   : cell.cover
                   ? `${cell.cover.shape.name} (${cell.cover.shape.ac}) at (${cell.x},${cell.y})`
                   : `Open floor (${cell.x},${cell.y})`
@@ -197,7 +215,7 @@ export default function TacticalGridTab() {
                 isSelected
                   ? 'bg-emerald-500/20 border-emerald-400 ring-1 ring-emerald-400'
                   : canMoveHere
-                  ? 'bg-[#161d26] border-emerald-500/30 hover:bg-emerald-500/15 hover:border-emerald-400 cursor-pointer'
+                  ? 'bg-emerald-500/10 border-emerald-500/40 hover:bg-emerald-500/25 hover:border-emerald-400 cursor-pointer'
                   : isFull
                   ? 'bg-slate-800/90 border-amber-500/40 text-amber-300/90'
                   : isHalf
@@ -227,10 +245,12 @@ export default function TacticalGridTab() {
         })}
       </div>
 
-      {/* Selected Cell / Move Hint Strip */}
       <div className="px-2.5 py-2 rounded-lg bg-[#0f1419] border border-slate-800 text-[11px] font-mono text-slate-300">
         {selectedTokenId ? (
-          <span className="text-emerald-300">Token selected - tap any open tile to move it.</span>
+          <span className="text-emerald-300">
+            Move range: {moveBudget.maxTiles}/{moveBudget.baseTiles} tiles
+            {moveBudget.reason ? ` (${moveBudget.reason})` : ''} - tap a highlighted tile.
+          </span>
         ) : inspectedCell ? (
           <span>
             ({inspectedCell.x},{inspectedCell.y}){' '}
@@ -241,11 +261,12 @@ export default function TacticalGridTab() {
               : '• Open Ground'}
           </span>
         ) : (
-          <span className="text-slate-500">Tap a token to reposition, or tap cover to inspect.</span>
+          <span className="text-slate-500">
+            Tap your green token to move ({moveBudget.maxTiles}/{moveBudget.baseTiles} tiles), or tap enemies/cover to inspect.
+          </span>
         )}
       </div>
 
-      {/* Legend */}
       <div className="flex flex-wrap gap-x-3 gap-y-1.5 text-[10px] font-mono text-slate-400">
         <span className="inline-flex items-center gap-1">
           <span className="w-2.5 h-2.5 rounded-full bg-emerald-400" /> Player

@@ -39,9 +39,6 @@ function parseCsvRow(line) {
   });
 }
 
-/**
- * Encodes authoritative Express state into Outbound T.O.O.N. wire format.
- */
 function encodeOutboundToon({
   campaignState,
   chronoSeedValue,
@@ -108,13 +105,13 @@ function encodeOutboundToon({
   );
 
   const recentChat = (campaignState.chatLog || [])
-    .filter((m) => m && (m.role === "player" || m.role === "narrator") && m.text)
+    .filter((m) => m && (m.role === 'player' || m.role === 'narrator') && m.text)
     .slice(-6);
   if (recentChat.length > 0) {
     lines.push(`@RECENT_EXCHANGE[${recentChat.length}]:`);
     for (const m of recentChat) {
-      const clean = String(m.text).replace(/\s+/g, " ").trim().slice(0, 900);
-      lines.push(`  [${m.role === "player" ? "PLAYER" : "GM"}]: ${clean}`);
+      const clean = String(m.text).replace(/\s+/g, ' ').trim().slice(0, 900);
+      lines.push(`  [${m.role === 'player' ? 'PLAYER' : 'GM'}]: ${clean}`);
     }
   }
 
@@ -144,10 +141,6 @@ function parseKeyValPipe(str) {
   return out;
 }
 
-/**
- * Parses Inbound T.O.O.N. response from LLM, validates delimiters, and strips
- * ---TOON_META--- completely from the returned narrative prose.
- */
 function parseInboundToon(rawText) {
   const text = String(rawText || '');
   const metaMarker = '---TOON_META---';
@@ -170,7 +163,7 @@ function parseInboundToon(rawText) {
   const narrative = narrativeRaw
     .replace(/^---TOON_META---[\s\S]*?---NARRATIVE---/gm, '')
     .replace(/\s*\u2014\s*/g, ' - ')
-    .replace(/^@(HP_DELTA|INV_DELTA|NPC_XP|GENES_UNLOCK|TELEMETRY|SCENE_LOG|CRIT_VISUAL_BRIEF).*$/gm, '')
+    .replace(/^@(HP_DELTA|INV_DELTA|NPC_MEET|NPC_XP|GRID_MOVE|ACTION_COST|GENES_UNLOCK|TELEMETRY|SCENE_LOG|CRIT_VISUAL_BRIEF).*$/gm, '')
     .trim();
 
   if (!narrative) {
@@ -180,7 +173,10 @@ function parseInboundToon(rawText) {
   const parsed = {
     hpDeltas: [],
     invDeltas: [],
+    npcMeets: [],
     npcXp: [],
+    gridMoves: [],
+    actionCost: { action: 'none', movePenaltyPct: 0, reason: '' },
     genesUnlock: [],
     telemetry: { blindReadXYZ: '0,0,0', kineticSpike: false, stressDelta: 0 },
     sceneLog: { sum: '', quote: '' },
@@ -194,20 +190,16 @@ function parseInboundToon(rawText) {
     const trimmed = rawLine.trim();
     if (!trimmed) continue;
 
-    if (trimmed.startsWith('@HP_DELTA')) {
-      currentSection = 'HP_DELTA';
-      continue;
-    }
-    if (trimmed.startsWith('@INV_DELTA')) {
-      currentSection = 'INV_DELTA';
-      continue;
-    }
-    if (trimmed.startsWith('@NPC_XP')) {
-      currentSection = 'NPC_XP';
-      continue;
-    }
-    if (trimmed.startsWith('@GENES_UNLOCK')) {
-      currentSection = 'GENES_UNLOCK';
+    if (trimmed.startsWith('@HP_DELTA')) { currentSection = 'HP_DELTA'; continue; }
+    if (trimmed.startsWith('@INV_DELTA')) { currentSection = 'INV_DELTA'; continue; }
+    if (trimmed.startsWith('@NPC_MEET')) { currentSection = 'NPC_MEET'; continue; }
+    if (trimmed.startsWith('@NPC_XP')) { currentSection = 'NPC_XP'; continue; }
+    if (trimmed.startsWith('@GRID_MOVE')) { currentSection = 'GRID_MOVE'; continue; }
+    if (trimmed.startsWith('@GENES_UNLOCK')) { currentSection = 'GENES_UNLOCK'; continue; }
+    if (trimmed.startsWith('@ACTION_COST')) {
+      currentSection = null;
+      const kv = parseKeyValPipe(trimmed.slice('@ACTION_COST'.length).trim());
+      parsed.actionCost = { ...parsed.actionCost, ...kv };
       continue;
     }
     if (trimmed.startsWith('@TELEMETRY')) {
@@ -240,6 +232,20 @@ function parseInboundToon(rawText) {
           name: cells[2],
           slots: Number(cells[3] ?? 1),
         });
+      } else if (currentSection === 'NPC_MEET' && cells.length >= 2) {
+        parsed.npcMeets.push({
+          id: cells[0],
+          name: cells[1],
+          role: cells[2] || 'Character',
+          disposition: cells[3] || 'neutral',
+        });
+      } else if (currentSection === 'GRID_MOVE' && cells.length >= 3) {
+        parsed.gridMoves.push({
+          id: cells[0],
+          x: Math.max(0, Math.min(8, Number(cells[1]) || 0)),
+          y: Math.max(0, Math.min(8, Number(cells[2]) || 0)),
+          kind: cells[3] || 'enemy',
+        });
       } else if (currentSection === 'NPC_XP' && cells.length >= 2) {
         parsed.npcXp.push({
           id: cells[0],
@@ -256,26 +262,13 @@ function parseInboundToon(rawText) {
     }
   }
 
-  return {
-    ok: true,
-    meta: parsed,
-    narrative,
-  };
+  return { ok: true, meta: parsed, narrative };
 }
 
-/**
- * 1-shot schema repair helper: invokes repairCallback if parseInboundToon fails.
- */
 async function parseWithOneShotRepair(rawText, repairCallback) {
   const firstAttempt = parseInboundToon(rawText);
-  if (firstAttempt.ok) {
-    return { ...firstAttempt, repaired: false };
-  }
-
-  if (typeof repairCallback !== 'function') {
-    return { ...firstAttempt, repaired: false };
-  }
-
+  if (firstAttempt.ok) return { ...firstAttempt, repaired: false };
+  if (typeof repairCallback !== 'function') return { ...firstAttempt, repaired: false };
   const repairedRaw = await repairCallback(rawText, firstAttempt.error);
   const secondAttempt = parseInboundToon(repairedRaw);
   return { ...secondAttempt, repaired: true };
