@@ -378,13 +378,42 @@ export default function ChatPane({ onOpenTutorial = () => {} } = {}) {
       )}
       <div className="flex-1 overflow-y-auto p-5 space-y-4">
         {isSetup && step === 'ignition' && (
-          <div className="rounded-xl bg-[#161d26] border border-slate-700 p-5 space-y-3">
-            <div className="text-xs font-semibold text-amber-400 uppercase tracking-wider">Step 1 · Ready to Build Your World</div>
-            <p className="text-sm text-slate-300">
-              Let’s set up your story together. First, click below to kick off your new world.
-            </p>
+          <div className="rounded-xl bg-[#161d26] border border-slate-700 p-5 space-y-4">
+            <div>
+              <div className="text-xs font-semibold text-amber-400 uppercase tracking-wider">Step 1 · Choose Your Setup Involvement (1–3)</div>
+              <p className="text-xs text-slate-400 mt-1">
+                Pick how much of the worldbuilding you want to direct versus hand off to the Game Master.
+              </p>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
+              {[
+                { lvl: 1, title: "1 · Just Infer It", desc: "You drop a quick pitch and the GM infers the rest of the world immediately." },
+                { lvl: 2, title: "2 · Quick Q&A", desc: "You pitch a premise and the GM asks at most 6 sharp clarifying questions before moving on." },
+                { lvl: 3, title: "3 · Inspire Me", desc: "Not sure yet? The GM plays reverse 20-questions with tappable choices to spark ideas." },
+              ].map((opt) => (
+                <button
+                  key={opt.lvl}
+                  type="button"
+                  onClick={() => setInvolvementLevel(opt.lvl)}
+                  className={`p-3 rounded-xl border text-left transition space-y-1 ${
+                    involvementLevel === opt.lvl
+                      ? "bg-amber-500/15 border-amber-400 text-amber-200 ring-1 ring-amber-400/50"
+                      : "bg-[#0f1419] border-slate-700 text-slate-300 hover:border-slate-500"
+                  }`}
+                >
+                  <div className="font-semibold">{opt.title}</div>
+                  <div className="text-[11px] text-slate-400 leading-relaxed">{opt.desc}</div>
+                </button>
+              ))}
+            </div>
             <button
-              onClick={() => runSetupStep('ignition', {})}
+              onClick={() => runSetupStep('ignition', { involvementLevel })}
+              className="px-4 py-2 rounded-lg bg-amber-500 text-[#0f1419] font-semibold text-xs hover:bg-amber-400 transition"
+            >
+              Let's Begin (Level {involvementLevel}) →
+            </button>
+          </div>
+        )}
               className="px-4 py-2 rounded-lg bg-amber-500 text-[#0f1419] font-semibold text-xs"
             >
               Let’s Begin
