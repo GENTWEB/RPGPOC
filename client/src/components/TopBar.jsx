@@ -14,7 +14,7 @@ import {
   Play,
   X,
   ChevronDown,
-} from 'lucide-react';
+, PanelRight } from 'lucide-react';
 import { useGame } from '../context/GameContext';
 
 const BYOK_GUIDES = {
@@ -97,11 +97,11 @@ export default function TopBar({ inspectorActive = false, onToggleInspector = ()
 
   return (
     <>
-      <header className="h-14 shrink-0 px-4 bg-[#161d26] border-b border-slate-800 flex items-center justify-between gap-3 relative z-30">
-        <div className="flex items-center gap-3 min-w-0">
+      <header className="h-14 shrink-0 px-2.5 sm:px-4 bg-[#161d26] border-b border-slate-800 flex items-center justify-between gap-2 sm:gap-3 relative z-30">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <button
             onClick={() => setNavMenuOpen(true)}
-            className="p-1.5 rounded-lg bg-[#0f1419] border border-slate-700 hover:border-amber-500 text-slate-200"
+            className="p-1.5 rounded-lg bg-[#0f1419] border border-slate-700 hover:border-amber-500 text-slate-200 shrink-0"
             title="Open Navigation Menu (Main Menu, Stories, Settings)"
           >
             <Menu className="w-4 h-4" />
@@ -109,16 +109,19 @@ export default function TopBar({ inspectorActive = false, onToggleInspector = ()
 
           <button
             onClick={returnToMainMenu}
-            className="flex items-center gap-2 text-left"
+            className="flex items-center gap-2 text-left min-w-0"
             title="Return to Main Menu"
           >
-            <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shadow-[0_0_8px_#f59e0b]" />
-            <span className="font-mono font-bold tracking-wider text-sm text-amber-400 whitespace-nowrap">
+            <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shadow-[0_0_8px_#f59e0b] shrink-0" />
+            <span className="sm:hidden font-mono font-bold tracking-wider text-xs text-amber-400 whitespace-nowrap">
+              DE LAVAL
+            </span>
+            <span className="hidden sm:inline font-mono font-bold tracking-wider text-sm text-amber-400 whitespace-nowrap">
               DE LAVAL // ENGINE v7.2
             </span>
           </button>
 
-          <span className="px-2 py-0.5 rounded text-[11px] font-mono uppercase border border-teal-500/40 bg-teal-500/10 text-teal-300">
+          <span className="hidden sm:inline-block px-2 py-0.5 rounded text-[11px] font-mono uppercase border border-teal-500/40 bg-teal-500/10 text-teal-300 whitespace-nowrap">
             {ruleset === 'PSYCH_REALISM' ? 'Deep Realism' : 'Dice & Tactics'}
           </span>
 
@@ -131,7 +134,8 @@ export default function TopBar({ inspectorActive = false, onToggleInspector = ()
           )}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          <div className="hidden lg:flex items-center gap-2">
           {/* Rich GM Model Dropdown */}
           <div className="relative">
             <button
@@ -268,7 +272,10 @@ export default function TopBar({ inspectorActive = false, onToggleInspector = ()
                 : 'bg-[#0f1419] border-slate-700 text-slate-300 hover:border-slate-500'
             }`}
             title="Show quick game commands"
-          />
+          >
+            <Terminal className="w-4 h-4" />
+          </button>
+          </div>
           <button
             onClick={onToggleInspector}
             data-help-title="Help Me Inspector"
@@ -278,6 +285,21 @@ export default function TopBar({ inspectorActive = false, onToggleInspector = ()
           >
             <HelpCircle className="w-4 h-4" />
           </button>
+          <button
+            onClick={onToggleSidebar}
+            data-help-title="Character Sheet Drawer"
+            data-help="Open or hide your Gear, Squad, Tactical Grid, and Lore panel."
+            title={sidebarHidden ? "Show Character Sheet" : "Hide Character Sheet"}
+            className={`flex items-center gap-1.5 px-2 py-1.5 rounded border text-xs font-mono transition ${
+              !sidebarHidden
+                ? "bg-amber-500/20 border-amber-500/60 text-amber-300"
+                : "bg-[#0f1419] border-slate-700 text-slate-300 hover:border-amber-500"
+            }`}
+          >
+            <PanelRight className="w-4 h-4" />
+            <span className="text-[11px]">Sheet</span>
+          </button>
+          <div className="hidden lg:flex items-center gap-2">
           {!providerStatus.connected ? (
             <button
               onClick={handleConnectAIProvider}
@@ -307,6 +329,7 @@ export default function TopBar({ inspectorActive = false, onToggleInspector = ()
           >
             <LogOut className="w-4 h-4" />
           </button>
+          </div>
         </div>
       </header>
 
@@ -317,7 +340,7 @@ export default function TopBar({ inspectorActive = false, onToggleInspector = ()
           onClick={() => setNavMenuOpen(false)}
         >
           <div
-            className="w-72 bg-[#161d26] border-r border-slate-800 p-5 flex flex-col justify-between"
+            className="w-72 max-w-[85vw] h-full overflow-y-auto bg-[#161d26] border-r border-slate-800 p-4 sm:p-5 flex flex-col justify-between gap-4"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="space-y-4">
@@ -327,6 +350,67 @@ export default function TopBar({ inspectorActive = false, onToggleInspector = ()
                   <X className="w-4 h-4" />
                 </button>
               </div>
+
+              {/* Mobile & Tablet Controls (moved from TopBar below lg) */}
+              <div className="lg:hidden space-y-2.5 p-3 rounded-xl bg-[#0f1419] border border-slate-800">
+                <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
+                  Engine Controls
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] text-slate-400">Game Master Model</label>
+                  <select
+                    value={selectedModel}
+                    onChange={(e) => setSelectedModel(e.target.value)}
+                    disabled={!providerStatus.connected}
+                    className="w-full bg-[#161d26] border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-100"
+                  >
+                    {(providerStatus.models || []).map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name} ({m.free ? "Free" : "Paid"})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] text-slate-400">Thinking</span>
+                  <div className="flex gap-1">
+                    {["Mid", "Max"].map((lvl) => (
+                      <button
+                        key={lvl}
+                        onClick={() => setThinkingLevel(lvl)}
+                        className={`px-2.5 py-1 rounded text-xs font-mono border ${
+                          thinkingLevel === lvl
+                            ? "bg-amber-500/20 border-amber-500 text-amber-300"
+                            : "bg-[#161d26] border-slate-700 text-slate-400"
+                        }`}
+                      >
+                        {lvl}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5 pt-1">
+                  <button
+                    onClick={() => { setOocDrawerOpen(!oocDrawerOpen); setNavMenuOpen(false); }}
+                    className="px-2 py-1.5 rounded bg-[#161d26] border border-slate-700 text-xs text-slate-200 hover:border-teal-400"
+                  >
+                    Commands
+                  </button>
+                  <button
+                    onClick={() => { handleConnectAIProvider(); setNavMenuOpen(false); }}
+                    className="px-2 py-1.5 rounded bg-[#161d26] border border-slate-700 text-xs text-teal-300 hover:border-teal-400"
+                  >
+                    {providerStatus.connected ? "AI Key" : "Connect AI"}
+                  </button>
+                </div>
+                <button
+                  onClick={handleSignOut}
+                  className="w-full py-1.5 rounded bg-red-950/40 border border-red-500/40 text-xs text-red-300 hover:bg-red-950/70"
+                >
+                  Sign Out
+                </button>
+              </div>
+
               <div className="space-y-2 text-sm">
                 <button
                   onClick={returnToMainMenu}

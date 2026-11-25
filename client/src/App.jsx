@@ -83,33 +83,48 @@ export default function App() {
           <ChatPane onOpenTutorial={() => setTutorialOpen(true)} />
         </section>
 
+        {/* Desktop docked, drag-to-resize sidebar */}
         {!sidebarHidden && (
           <>
             <div
               onMouseDown={() => setDragging(true)}
               data-help-title="Resize Sidebar"
               data-help="Drag left or right to make your character sheet wider or narrower."
-              className="w-1.5 cursor-col-resize bg-slate-800/80 hover:bg-amber-500/70 transition shrink-0"
+              className="hidden lg:block w-1.5 cursor-col-resize bg-slate-800/80 hover:bg-amber-500/70 transition shrink-0"
               title="Drag to resize sidebar"
             />
             <aside
               style={{ width: `${sidebarWidth}px` }}
-              className="shrink-0 bg-[#121820] flex flex-col min-h-0 border-l border-slate-800/60"
+              className="hidden lg:flex shrink-0 bg-[#121820] flex-col min-h-0 border-l border-slate-800/60"
             >
               <RightDrawer />
             </aside>
           </>
         )}
 
-        <button
-          onClick={() => setSidebarHidden((v) => !v)}
-          data-help-title="Toggle Character Drawer"
-          data-help="Hide or show the Gear, Squad, Grid, and Lore sidebar for full-screen reading."
-          title={sidebarHidden ? 'Show Character Sidebar' : 'Hide Character Sidebar'}
-          className="fixed top-16 right-3 z-20 p-1.5 rounded-lg bg-[#161d26]/90 border border-slate-700 hover:border-amber-500 text-slate-300 shadow-lg"
-        >
-          {sidebarHidden ? <PanelRightOpen className="w-4 h-4" /> : <PanelRightClose className="w-4 h-4" />}
-        </button>
+        {/* Mobile & tablet slide-over drawer */}
+        {!sidebarHidden && (
+          <div className="lg:hidden fixed inset-0 z-40 flex justify-end">
+            <div
+              className="fixed inset-0 bg-black/65 backdrop-blur-xs"
+              onClick={() => setSidebarHidden(true)}
+            />
+            <aside className="relative z-50 w-[88vw] max-w-sm h-full bg-[#121820] border-l border-slate-700 flex flex-col shadow-2xl">
+              <div className="flex items-center justify-between px-3 py-2 border-b border-slate-800 bg-[#0f1419]">
+                <span className="text-xs font-mono text-amber-400 tracking-wider uppercase">Character Sheet</span>
+                <button
+                  onClick={() => setSidebarHidden(true)}
+                  className="px-2 py-1 rounded text-xs font-mono bg-slate-800 text-slate-200 hover:bg-slate-700"
+                >
+                  Close ✕
+                </button>
+              </div>
+              <div className="flex-1 min-h-0 flex flex-col">
+                <RightDrawer />
+              </div>
+            </aside>
+          </div>
+        )}
       </main>
 
       {lightboxImage && (

@@ -31,6 +31,22 @@ function sleepWithCountdown(seconds, labelBuilder, onStatus, cancelRef) {
   });
 }
 
+function buildFallbackChain(primaryModel, primaryLabel, fallbackModel, fallbackLabel) {
+  const chain = [{ id: primaryModel, label: primaryLabel || primaryModel, retries: 2 }];
+
+  // Try sibling Gemma 4 model first so prose voice stays consistent on free tier
+  if (primaryModel === 'gemma-4-26b-a4b-it') {
+    chain.push({ id: 'gemma-4-31b-it', label: 'Gemma 4 31B IT', retries: 1 });
+  } else if (primaryModel === 'gemma-4-31b-it') {
+    chain.push({ id: 'gemma-4-26b-a4b-it', label: 'Gemma 4 26B A4B IT', retries: 1 });
+  }
+
+  if (fallbackModel && !chain.some((m) => m.id === fallbackModel)) {
+    chain.push({ id: fallbackModel, label: fallbackLabel || fallbackModel, retries: 2 });
+  }
+  return chain;
+}
+
 export async function runWithRetryAndFallback({
   primaryModel,
   fallbackModel = 'gemini-3.5-flash-lite',
@@ -41,60 +57,48 @@ export async function runWithRetryAndFallback({
   onStatus = () => {},
   cancelRef = null,
 }) {
-  let lastReason = 'Busy';
+  const chain = buildFallbackChain(primaryModel, primaryLabel, fallbackModel, fallbackLabel);
+  let lastError = null;
 
-  for (let attempt = 0; attempt <= 2; attempt += 1) {
-    if (cancelRef?.current) throw new Error('Request cancelled by user.');
-    if (attempt === 0) {
-      onStatus(initialStatus);
-    } else {
-      await sleepWithCountdown(
-        RETRY_DELAY_SECONDS,
-        (s) => `${primaryLabel} (${lastReason}) — retrying (${attempt}/2) in ${s}s...`,
-        onStatus,
-        cancelRef
-      );
-      onStatus(`Retrying ${primaryLabel} (${attempt}/2)...`);
-    }
+  for (let tierIdx = 0; tierIdx < chain.length; tierIdx += 1) {
+    const tier = chain[tierIdx];
+    const maxAttempts = 1 + tier.retries;
 
-    try {
-      const result = await invoke(primaryModel);
-      return { result, usedModel: primaryModel, fellBack: false };
-    } catch (err) {
-      const reason = getErrorReason(err);
-      if (!reason || cancelRef?.current) throw err;
-      lastReason = reason;
-    }
-  }
-
-  if (fallbackModel && fallbackModel !== primaryModel) {
-    onStatus(`${primaryLabel} (${lastReason}) — falling back to ${fallbackLabel} (1/2)...`);
-    for (let fbAttempt = 1; fbAttempt <= 2; fbAttempt += 1) {
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       if (cancelRef?.current) throw new Error('Request cancelled by user.');
-      if (fbAttempt === 2) {
-        await sleepWithCountdown(
-          RETRY_DELAY_SECONDS,
-          (s) => `${fallbackLabel} (${lastReason}) — retrying (2/2) in ${s}s...`,
-          onStatus,
-          cancelRef
-        );
+
+      if (tierIdx === 0 && attempt === 1) {
+        onStatus(initialStatus);
+      } else if (attempt === 1) {
+        onStatus(`Switching to ${tier.label} (attempt 1/${maxAttempts})...`);
+      } else {
+        onStatus(`${tier.label} — trying (${attempt - 1}/${tier.retries})...`);
       }
-      onStatus(`Falling back to ${fallbackLabel} — trying ${fbAttempt}/2...`);
+
       try {
-        const result = await invoke(fallbackModel);
-        return { result, usedModel: fallbackModel, fellBack: true };
+        const result = await invoke(tier.id);
+        return { result, modelUsed: tier.id, fellBack: tierIdx > 0 };
       } catch (err) {
+        lastError = err;
         const reason = getErrorReason(err);
-        if (!reason || cancelRef?.current) throw err;
-        lastReason = reason;
+        if (!reason || cancelRef?.current) {
+          throw err;
+        }
+        if (attempt < maxAttempts) {
+          await sleepWithCountdown(
+            RETRY_DELAY_SECONDS,
+            (sec) => `${tier.label} (${reason}) — retrying (${attempt}/${tier.retries}) in ${sec}s...`,
+            onStatus,
+            cancelRef
+          );
+        }
       }
     }
   }
 
-  const exhaustedErr = new Error(
-    `All free attempts failed (${lastReason}) — switch to a paid tier in the GM menu or wait 75 seconds.`
+  const finalErr = new Error(
+    `All models are currently busy (${getErrorReason(lastError) || 'Unavailable'}). Please wait for the cooldown or switch to a paid tier.`
   );
-  exhaustedErr.exhausted = true;
-  exhaustedErr.cooldownSeconds = 75;
-  throw exhaustedErr;
+  finalErr.triggerCooldown = true;
+  throw finalErr;
 }
