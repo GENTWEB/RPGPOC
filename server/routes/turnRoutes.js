@@ -116,6 +116,8 @@ router.post('/:campaignId', async (req, res) => {
       archivist,
       mediaPipeline,
       saveHandler,
+      imageMode: req.body?.imageMode || 'prompt_only',
+      imageAccessToken: typeof accessToken !== 'undefined' ? accessToken : null,
     });
 
     if (result.mutatedState) {

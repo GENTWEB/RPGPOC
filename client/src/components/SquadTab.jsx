@@ -1,5 +1,5 @@
-import React from 'react';
-import { Lock, UserCheck, Sparkles, Users } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Lock, UserCheck, Sparkles, Users, Copy, Check } from 'lucide-react';
 import { useGame } from '../context/GameContext';
 
 const BOND_LABELS = {
@@ -12,6 +12,24 @@ const BOND_LABELS = {
 export default function SquadTab() {
   const { campaignState } = useGame();
   const npcs = campaignState?.activeEntities?.activeNPCs || [];
+  const [copiedId, setCopiedId] = useState(null);
+  const [imageMode, setImageMode] = useState(
+    () => localStorage.getItem('delaval_image_mode') || 'prompt_only'
+  );
+
+  useEffect(() => {
+    const sync = () => setImageMode(localStorage.getItem('delaval_image_mode') || 'prompt_only');
+    window.addEventListener('delaval-image-mode-change', sync);
+    return () => window.removeEventListener('delaval-image-mode-change', sync);
+  }, []);
+
+  const copyPrompt = async (npcId, text) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedId(npcId);
+      setTimeout(() => setCopiedId(null), 1800);
+    } catch (_) {}
+  };
 
   if (npcs.length === 0) {
     return (
@@ -91,6 +109,22 @@ export default function SquadTab() {
                 {rel.coreBeliefs && (
                   <div><span className="text-slate-500 font-mono">OUTLOOK:</span> {rel.coreBeliefs}</div>
                 )}
+              </div>
+            )}
+
+            {imageMode !== 'off' && npc.portraitPrompt && (
+              <div className="pt-2 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => copyPrompt(npc.id, npc.portraitPrompt)}
+                  className="w-full inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#0f1419] border border-amber-500/40 hover:border-amber-400 text-[11px] font-mono text-amber-300 transition"
+                >
+                  {copiedId === npc.id ? (
+                    <><Check className="w-3.5 h-3.5 text-emerald-400" /> Copied Portrait Prompt!</>
+                  ) : (
+                    <><Copy className="w-3.5 h-3.5" /> Copy Portrait Art Prompt</>
+                  )}
+                </button>
               </div>
             )}
           </div>

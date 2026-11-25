@@ -16,7 +16,8 @@ export function GameProvider({ children }) {
   });
   const [selectedModel, setSelectedModel] = useState(() => localStorage.getItem('delaval_selected_model') || 'gemma-4-26b-a4b-it');
   useEffect(() => { if (selectedModel) localStorage.setItem('delaval_selected_model', selectedModel); }, [selectedModel]);
-  const [thinkingLevel, setThinkingLevelState] = useState(() => localStorage.getItem('dl_thinking_level') || 'Max');
+  const [thinkingLevel,
+            imageMode: localStorage.getItem('delaval_image_mode') || 'prompt_only', setThinkingLevelState] = useState(() => localStorage.getItem('dl_thinking_level') || 'Max');
   const setThinkingLevel = (lvl) => { localStorage.setItem('dl_thinking_level', lvl); setThinkingLevelState(lvl); };
   const [involvementLevel, setInvolvementLevel] = useState(1);
   const [artTarget, setArtTarget] = useState("nano_banana_web");

@@ -66,6 +66,8 @@ async function processTurn({
   mediaPipeline = null,
   saveHandler = null,
   onAsyncNpcPortrait = null,
+  imageMode,
+  imageAccessToken = null,
 }) {
   const chrono = new ChronoSeed(timestamp, campaignState.metaData?.turnNumber || 0);
   const workingState = cloneState(campaignState);
@@ -411,15 +413,26 @@ async function processTurn({
       if (typeof onAsyncNpcPortrait === 'function') {
         onAsyncNpcPortrait(npc);
       }
+      if (imageMode === 'off') return;
+      const artPrompt = `Character portrait of ${npc.name || npc.id} (${npc.role || 'key character'}) in ${workingState.globalState?.settingDescription || 'this story world'}. Visual style: ${workingState.globalState?.narratorStyle || 'Cinematic literary noir'}. High-detail waist-up portrait, expressive lighting, no text.`;
+      if (imageMode === 'prompt_only') {
+        npc.portraitPrompt = artPrompt;
+        return;
+      }
       if (mediaPipeline && typeof mediaPipeline.generateNpcPortraitAsync === 'function') {
-        const p = mediaPipeline.generateNpcPortraitAsync({
-          uid: workingState.ownerUid,
-          campaignId: workingState.id,
-          npc,
-          style: workingState.globalState?.narratorStyle,
-          onComplete: async (res) => {
-            npc.portraitRef = res.storagePath;
-          },
+        const p = Promise.resolve(
+          mediaPipeline.generateNpcPortraitAsync({
+            uid: workingState.ownerUid,
+            campaignId: workingState.id,
+            npc,
+            style: workingState.globalState?.narratorStyle,
+            accessToken: imageAccessToken,
+            onComplete: async (res) => {
+              npc.portraitRef = res.storagePath;
+            },
+          })
+        ).catch(() => {
+          npc.portraitPrompt = artPrompt;
         });
         asyncPortraitPromises.push(p);
       }
