@@ -68,7 +68,7 @@ export const apiClient = {
 
   // Turn Execution & Snapshots
   sendTurn: (campaignId, payload) =>
-    request(`/turns/${campaignId}`, { method: 'POST', body: JSON.stringify(payload) }),
+    request(`/turns/${campaignId}`, { method: 'POST', body: JSON.stringify({ imageMode: localStorage.getItem('delaval_image_mode') || 'prompt_only', ...(payload || {}) }) }),
   rewindTurn: (campaignId, steps = 1) =>
     request(`/turns/${campaignId}/rewind`, { method: 'POST', body: JSON.stringify({ steps }) }),
   fastForwardTurn: (campaignId) =>
