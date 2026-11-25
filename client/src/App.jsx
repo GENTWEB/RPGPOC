@@ -11,7 +11,7 @@ import HelpOverlay from './components/HelpOverlay';
 export default function App() {
   const { user, authLoading, statusToast, lightboxImage, setLightboxImage, startNewCampaign } = useGame();
   const [sidebarWidth, setSidebarWidth] = useState(() => Number(localStorage.getItem('dl_sidebar_w')) || 390);
-  const [sidebarHidden, setSidebarHidden] = useState(() => localStorage.getItem('dl_sidebar_hidden') === 'true');
+  const [sidebarHidden, setSidebarHidden] = useState(() => (typeof window !== 'undefined' && window.innerWidth < 1024) ? true : localStorage.getItem('dl_sidebar_hidden') === 'true');
   const [dragging, setDragging] = useState(false);
   const [inspectorActive, setInspectorActive] = useState(false);
   const [tutorialOpen, setTutorialOpen] = useState(false);

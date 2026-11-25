@@ -57,7 +57,7 @@ const BYOK_GUIDES = {
   },
 };
 
-export default function TopBar({ inspectorActive = false, onToggleInspector = () => {}, onOpenTutorial = () => {} } = {}) {
+export default function TopBar({ inspectorActive = false, onToggleInspector = () => {}, onOpenTutorial = () => {}, sidebarHidden = false, onToggleSidebar = () => {} } = {}) {
   const {
     user,
     providerStatus,
