@@ -414,12 +414,6 @@ export default function ChatPane({ onOpenTutorial = () => {} } = {}) {
             </button>
           </div>
         )}
-              className="px-4 py-2 rounded-lg bg-amber-500 text-[#0f1419] font-semibold text-xs"
-            >
-              Let’s Begin
-            </button>
-          </div>
-        )}
 
         {isSetup && step === 'setting' && (
           <div className="rounded-xl bg-[#161d26] border border-slate-700 p-5 space-y-3">
