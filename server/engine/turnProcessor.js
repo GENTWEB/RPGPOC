@@ -486,14 +486,24 @@ async function processTurn({
 
   // Step 7: Critical Graphic-Novel Panel
   let panel = null;
-  if (primaryRoll.critArtRequired && mediaPipeline && typeof mediaPipeline.generateScenePanel === 'function') {
+  if (primaryRoll.critArtRequired && imageMode !== 'off') {
     const brief = meta.critVisualBrief || meta.sceneLog?.sum || userInput;
-    panel = await mediaPipeline.generateScenePanel({
-      uid: workingState.ownerUid,
-      campaignId: workingState.id,
-      brief,
-      campaignState: workingState,
-    });
+    const panelPrompt = `Cinematic graphic-novel scene panel: ${brief}. Setting: ${workingState.globalState?.settingDescription || 'story world'}. Style: ${workingState.globalState?.narratorStyle || 'Cinematic literary noir'}.`;
+    if (imageMode === 'prompt_only') {
+      panel = { promptOnly: true, prompt: panelPrompt, brief };
+    } else if (mediaPipeline && typeof mediaPipeline.generateScenePanel === 'function') {
+      try {
+        panel = await mediaPipeline.generateScenePanel({
+          uid: workingState.ownerUid,
+          campaignId: workingState.id,
+          brief,
+          campaignState: workingState,
+          accessToken: imageAccessToken,
+        });
+      } catch (_) {
+        panel = { promptOnly: true, prompt: panelPrompt, brief };
+      }
+    }
   }
 
   // Append clean chat entries (zero TOON metadata)
