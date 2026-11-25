@@ -14,7 +14,8 @@ import {
   Play,
   X,
   ChevronDown,
-, PanelRight } from 'lucide-react';
+  PanelRight,
+} from 'lucide-react';
 import { useGame } from '../context/GameContext';
 
 const BYOK_GUIDES = {
