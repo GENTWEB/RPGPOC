@@ -79,7 +79,7 @@ export default function TacticalGridTab() {
         y: height - 2,
       },
     ];
-    if (demoMode || activeNpcs.length === 0) {
+    if (demoMode) {
       list.push(
         { id: 'enemy_1', name: 'Hostile Contact A', label: 'E1', kind: 'enemy', x: width - 2, y: 1 },
         { id: 'enemy_2', name: 'Hostile Contact B', label: 'E2', kind: 'enemy', x: width - 3, y: 3 }

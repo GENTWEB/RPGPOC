@@ -77,8 +77,6 @@ async function processTurn({
     const oocResult = await routeOocCommand({
       parsed: parsedOoc,
       campaignState: workingState,
-    capabilityTier,
-    stallWarning,
       chronoSeed: chrono,
       snapshotStore,
       mediaPipeline,
@@ -378,6 +376,35 @@ async function processTurn({
     reason: reasons.join(" · "),
   };
 
+  // Auto-register any NPC referenced in @NPC_XP or @SCENE_LOG quote if not yet in Squad
+  const ensureNpc = (rawId, rawName, roleHint = "Character") => {
+    const cleanId = String(rawId || rawName || "").trim().toLowerCase().replace(/[^a-z0-9_]+/g, "_");
+    if (!cleanId || cleanId === pcIdLower || /^(pc_\d+|player|you|narrator|gm|system|hero)$/i.test(cleanId)) return;
+    const exists = workingState.activeEntities.activeNPCs.some(
+      (n) => n.id === cleanId || String(n.name || "").toLowerCase() === String(rawName || "").toLowerCase()
+    );
+    if (!exists) {
+      const niceName = rawName || cleanId.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+      workingState.activeEntities.activeNPCs.push({
+        id: cleanId,
+        name: niceName,
+        role: roleHint,
+        disposition: "neutral",
+        currentTier: 3,
+        relationalXP: 5,
+        permanenceUnlocked: false,
+        genetics: { tier_2_relational: { STATUS: "ACTIVE", currentGoal: roleHint } },
+      });
+    }
+  };
+  for (const xpRow of meta.npcXp || []) {
+    ensureNpc(xpRow.id, null, xpRow.reason || "Key Character");
+  }
+  const quoteSpeakerMatch = String(meta.sceneLog?.quote || "").match(/^([A-Z][a-zA-Z\s.\x27-]{1,28}):/);
+  if (quoteSpeakerMatch) {
+    ensureNpc(quoteSpeakerMatch[1], quoteSpeakerMatch[1].trim(), "Met in scene");
+  }
+
   const asyncPortraitPromises = [];
   const nozzleRes = applyRelationalXpDeltas(workingState.activeEntities.activeNPCs, meta.npcXp, {
     onTriggerAsyncPortrait: (npc) => {
@@ -492,6 +519,8 @@ async function processTurn({
     outboundToon,
     asyncPortraitCount: asyncPortraitPromises.length,
     campaignState: workingState,
+    capabilityTier,
+    stallWarning,
   };
 }
 
