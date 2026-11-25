@@ -16,6 +16,7 @@ const {
   tickEnvironmentalSwarms,
 } = require('./deLavalNozzle');
 const { buildNarratorSystemPrompt } = require('./narratorPrompt');
+const { getModelCapabilityTier, inferDeterministicActionCost } = require('./modelCapabilities');
 const { encodeOutboundToon, parseWithOneShotRepair } = require('../services/toonCodec');
 
 function cloneState(obj) {
@@ -76,6 +77,8 @@ async function processTurn({
     const oocResult = await routeOocCommand({
       parsed: parsedOoc,
       campaignState: workingState,
+    capabilityTier,
+    stallWarning,
       chronoSeed: chrono,
       snapshotStore,
       mediaPipeline,
@@ -207,7 +210,9 @@ async function processTurn({
   });
 
   // Step 5: LLM Narrator Invocation + 1-shot T.O.O.N. Repair
-  const systemPrompt = buildNarratorSystemPrompt(workingState);
+  const activeModelId = llmAdapter?.modelId || workingState.metaData?.lastModelUsed || "";
+  const capabilityTier = getModelCapabilityTier(activeModelId);
+  const systemPrompt = buildNarratorSystemPrompt(workingState, { modelId: activeModelId });
   const rawLlmOutput = await llmAdapter.complete({
     systemPrompt,
     userPrompt: outboundToon,
@@ -273,10 +278,16 @@ async function processTurn({
     }
   }
 
+  // Prune any accidental player-id entries from Squad
+  const pcIdLower = String(pc?.id || "pc_1").toLowerCase();
+  workingState.activeEntities.activeNPCs = (workingState.activeEntities.activeNPCs || []).filter(
+    (n) => String(n.id || "").toLowerCase() !== pcIdLower && !/^pc_\d+$/i.test(String(n.id || ""))
+  );
+
   // Auto-register newly met NPCs so Squad populates live
   for (const met of meta.npcMeets || []) {
     const cleanId = String(met.id || met.name || "").trim().toLowerCase().replace(/[^a-z0-9_]+/g, "_");
-    if (!cleanId) continue;
+    if (!cleanId || cleanId === pcIdLower || /^pc_\d+$/i.test(cleanId)) continue;
     const exists = workingState.activeEntities.activeNPCs.some(
       (n) => n.id === cleanId || String(n.name || "").toLowerCase() === String(met.name || "").toLowerCase()
     );
@@ -334,9 +345,24 @@ async function processTurn({
     }
   }
 
-  // Compute live Deep Realism / Encumbrance movement tile budget from @ACTION_COST
+  // Compute live Deep Realism / Encumbrance movement tile budget (with deterministic verb fallback)
   const baseTiles = 5;
-  const narrativePct = Math.min(70, Math.max(0, Number(meta.actionCost?.movePenaltyPct) || 0));
+  const llmPct = Math.min(70, Math.max(0, Number(meta.actionCost?.movePenaltyPct) || 0));
+  const fallbackCost = llmPct === 0 ? inferDeterministicActionCost(userInput) : null;
+  const effectiveActionCost = llmPct > 0 ? meta.actionCost : (fallbackCost || meta.actionCost);
+  const narrativePct = Math.min(70, Math.max(0, Number(effectiveActionCost?.movePenaltyPct) || 0));
+  meta.actionCost = effectiveActionCost;
+
+  // Rolling Lite Stall Counter (warn if 3+ LITE fallback turns occur in the last 6 turns)
+  const stallHist = Array.isArray(workingState.worldState.liteStallHistory)
+    ? workingState.worldState.liteStallHistory.slice(-5)
+    : [];
+  stallHist.push(capabilityTier === "LITE" ? 1 : 0);
+  workingState.worldState.liteStallHistory = stallHist;
+  const liteCount = stallHist.reduce((a, b) => a + b, 0);
+  const stallWarning = liteCount >= 3
+    ? "Free-tier models are heavily overloaded right now (" + liteCount + " fallback turns in the last " + stallHist.length + "). Consider waiting a bit or switching to a paid model for full engine depth."
+    : null;
   const encPct = pc?.combatStats?.encumbrancePenalty ? 30 : 0;
   const combinedPct = Math.min(80, narrativePct + encPct);
   const maxTiles = Math.max(1, Math.round(baseTiles * (1 - combinedPct / 100)));

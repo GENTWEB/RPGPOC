@@ -83,6 +83,7 @@ router.post('/:campaignId', async (req, res) => {
     const snapshotStore = buildSnapshotStore(uid, campaignId);
 
     const llmAdapter = {
+      modelId: model,
       async complete({ systemPrompt, userPrompt }) {
         return callNarratorLLM({
           provider,

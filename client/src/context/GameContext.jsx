@@ -184,6 +184,7 @@ export function GameProvider({ children }) {
     try {
       const res = await apiClient.createCampaign(rulesetMode);
       setCampaignState({ ...res.campaignState });
+      if (res.stallWarning) notify(res.stallWarning, "warn");
       setPendingPortrait(null);
       setNavMenuOpen(false);
       await refreshCatalogAndCampaigns();
