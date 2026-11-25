@@ -14,7 +14,7 @@ Output ONLY these two sections:
 @ACTION_COST action:"none"|movePenaltyPct:0|reason:""
 @SCENE_LOG sum:"One-sentence scene summary."|quote:"Speaker: Memorable line."
 ---NARRATIVE---
-[2 tight paragraphs of sensory story prose ONLY. Zero metadata, zero em dashes.]`;
+[2 tight paragraphs of sensory story prose ONLY. Zero metadata, zero em dashes, zero numbered [1. ...] option menus.]`;
   }
 
   const frontierAddons =

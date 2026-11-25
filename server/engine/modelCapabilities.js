@@ -1,11 +1,5 @@
 'use strict';
 
-/**
- * Classifies an LLM model ID into one of three De Laval capability tiers:
- * - LITE: Fast/small fallback models -> minimal 2-tag TOON ("graceful stall")
- * - STANDARD: Core daily-driver models (Gemma 4 26B/31B, Gemini Flash) -> full core TOON
- * - FRONTIER: Paid frontier / omni-capable models (Pro, Opus, Sonnet, Argon, Video) -> expanded simulation + video hooks
- */
 function getModelCapabilityTier(modelId = '') {
   const id = String(modelId || '').toLowerCase();
   if (!id) return 'STANDARD';
@@ -14,9 +8,6 @@ function getModelCapabilityTier(modelId = '') {
   return 'STANDARD';
 }
 
-/**
- * Deterministic safety net for Deep Realism movement penalties when a model omits @ACTION_COST.
- */
 function inferDeterministicActionCost(userInput = '') {
   const text = String(userInput || '').toLowerCase();
   if (!text) return { action: 'none', movePenaltyPct: 0, reason: '' };
@@ -33,7 +24,31 @@ function inferDeterministicActionCost(userInput = '') {
   return { action: 'none', movePenaltyPct: 0, reason: '' };
 }
 
+function inferDeterministicBondXp({ userInput = '', sceneSum = '', narrative = '', activeNPCs = [], existingXpIds = new Set() }) {
+  const combined = `${userInput} ${sceneSum} ${narrative}`;
+  const results = [];
+  const isMajorBond = /\b(deal|partner|partnership|pact|alliance|handshake|truce|join me|joined|trust|save|saved|rescue|oath|swear)\b/i.test(combined);
+  for (const npc of activeNPCs || []) {
+    const id = String(npc.id || '').toLowerCase();
+    const name = String(npc.name || '').trim();
+    if (!id || !name || existingXpIds.has(id)) continue;
+    const firstName = name.split(/\s+/)[0];
+    if (firstName.length < 2) continue;
+    const escaped = firstName.replace(/[.*+?^$()|[\]\\]/g, '\\$&');
+    const mentioned = new RegExp(`\\b${escaped}\\b`, 'i').test(`${sceneSum} ${narrative}`);
+    if (mentioned) {
+      results.push({
+        id: npc.id,
+        delta: isMajorBond ? 20 : 5,
+        reason: isMajorBond ? 'Major pact / partnership' : 'Scene interaction',
+      });
+    }
+  }
+  return results;
+}
+
 module.exports = {
   getModelCapabilityTier,
   inferDeterministicActionCost,
+  inferDeterministicBondXp,
 };

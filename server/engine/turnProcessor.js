@@ -16,7 +16,7 @@ const {
   tickEnvironmentalSwarms,
 } = require('./deLavalNozzle');
 const { buildNarratorSystemPrompt } = require('./narratorPrompt');
-const { getModelCapabilityTier, inferDeterministicActionCost } = require('./modelCapabilities');
+const { getModelCapabilityTier, inferDeterministicActionCost, inferDeterministicBondXp } = require('./modelCapabilities');
 const { encodeOutboundToon, parseWithOneShotRepair } = require('../services/toonCodec');
 
 function cloneState(obj) {
@@ -408,7 +408,16 @@ async function processTurn({
   }
 
   const asyncPortraitPromises = [];
-  const nozzleRes = applyRelationalXpDeltas(workingState.activeEntities.activeNPCs, meta.npcXp, {
+  const existingXpIds = new Set((meta.npcXp || []).map((x) => String(x.id || "").toLowerCase()));
+  const fallbackXp = inferDeterministicBondXp({
+    userInput,
+    sceneSum: meta.sceneLog?.sum || "",
+    narrative: parsed.narrative || "",
+    activeNPCs: workingState.activeEntities.activeNPCs,
+    existingXpIds,
+  });
+  const mergedNpcXp = [...(meta.npcXp || []), ...fallbackXp];
+  const nozzleRes = applyRelationalXpDeltas(workingState.activeEntities.activeNPCs, mergedNpcXp, {
     onTriggerAsyncPortrait: (npc) => {
       if (typeof onAsyncNpcPortrait === 'function') {
         onAsyncNpcPortrait(npc);
