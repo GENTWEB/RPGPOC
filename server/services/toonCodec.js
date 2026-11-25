@@ -107,6 +107,17 @@ function encodeOutboundToon({
       (mergedFlags.travelEncounter ? '|travelEncounter:true' : '')
   );
 
+  const recentChat = (campaignState.chatLog || [])
+    .filter((m) => m && (m.role === "player" || m.role === "narrator") && m.text)
+    .slice(-6);
+  if (recentChat.length > 0) {
+    lines.push(`@RECENT_EXCHANGE[${recentChat.length}]:`);
+    for (const m of recentChat) {
+      const clean = String(m.text).replace(/\s+/g, " ").trim().slice(0, 900);
+      lines.push(`  [${m.role === "player" ? "PLAYER" : "GM"}]: ${clean}`);
+    }
+  }
+
   lines.push('@USER_VERBATIM:');
   lines.push(String(userVerbatim || ''));
 
@@ -158,6 +169,7 @@ function parseInboundToon(rawText) {
 
   const narrative = narrativeRaw
     .replace(/^---TOON_META---[\s\S]*?---NARRATIVE---/gm, '')
+    .replace(/\s*\u2014\s*/g, ' - ')
     .replace(/^@(HP_DELTA|INV_DELTA|NPC_XP|GENES_UNLOCK|TELEMETRY|SCENE_LOG|CRIT_VISUAL_BRIEF).*$/gm, '')
     .trim();
 
